@@ -14,7 +14,7 @@ export interface User {
   email: string;
   role: UserRole;
   approvalLimit?: number;
-  canEditPOPrices?: boolean; // صلاحية تعديل الأسعار بعد الإصدار
+  canEditPOPrices?: boolean; 
 }
 
 export interface Project {
@@ -24,13 +24,15 @@ export interface Project {
   budget: number;
   spent: number;
   status: string;
-  levelsCount: number;
   assignedUserIds: string[];
-  scheduledQuantities: ProjectItemQuantity[];
 }
 
-export interface ProjectItemQuantity {
+export interface ProjectBOQ {
+  id: string;
+  projectId: string;
   itemId: string;
+  itemName: string; // denormalized for UI
+  unit: string;
   totalQuantity: number;
   receivedQuantity: number;
 }
@@ -75,12 +77,55 @@ export interface MaterialRequest {
   id: string;
   projectId: string;
   requesterId: string;
+  requesterName: string; // denormalized
+  projectName: string; // denormalized
   status: RequestStatus;
   createdAt: string;
-  items: {
-    itemId: string;
-    quantity: number;
-    notes?: string;
-    aliasUsed?: string;
-  }[];
+  items: RequestItem[];
+}
+
+export interface RequestItem {
+  id: string; // unique ID for the line item
+  itemId: string;
+  name: string;
+  unit: string;
+  quantity: number;
+  notes?: string;
+}
+
+export interface PurchaseOrder {
+  id: string;
+  requestId: string;
+  projectId: string;
+  projectName: string;
+  supplierId: string;
+  supplierName: string;
+  status: POStatus;
+  totalAmount: number;
+  createdAt: string;
+  items: POItem[];
+}
+
+export interface POItem {
+  id: string;
+  itemId: string;
+  name: string;
+  unit: string;
+  quantity: number; // الكمية المطلوبة في أمر الشراء
+  price: number;
+  receivedQuantity: number; // الكمية التي تم استلامها بالفعل على هذا البند
+}
+
+export interface Receipt {
+  id: string;
+  poId: string;
+  projectId: string;
+  receivedDate: string;
+  receivedBy: string;
+  items: ReceiptItem[];
+}
+
+export interface ReceiptItem {
+  itemId: string;
+  quantity: number;
 }

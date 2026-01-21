@@ -1,5 +1,5 @@
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { 
   Plus, 
   Trash2, 
@@ -13,10 +13,12 @@ import {
   ChevronRight, 
   ChevronLeft,
   Building2,
-  ChevronDown
+  ChevronDown,
+  CheckCircle2
 } from 'lucide-react';
-import { User, RequestStatus, Item, UserRole } from '../types';
+import { User, RequestStatus, Item, UserRole, MaterialRequest } from '../types';
 import { REQUEST_STATUS_LABELS } from '../constants';
+import { dbService } from '../services/databaseService';
 
 const MaterialRequestView: React.FC<{ user: User }> = ({ user }) => {
   const [showForm, setShowForm] = useState(false);
@@ -25,23 +27,34 @@ const MaterialRequestView: React.FC<{ user: User }> = ({ user }) => {
   const [selectedProjectFilter, setSelectedProjectFilter] = useState('all');
   const [currentPage, setCurrentPage] = useState(1);
   const [requestItems, setRequestItems] = useState<any[]>([]);
+  const [selectedProjectIdForNewReq, setSelectedProjectIdForNewReq] = useState('');
+  
+  // Real Data State
+  const [requests, setRequests] = useState<MaterialRequest[]>([]);
+  const [myProjects, setMyProjects] = useState<any[]>([]);
+
   const itemsPerPage = 5;
 
-  // Mock projects with assignments
-  const allProjects = [
-    { id: '1', name: 'برج التجارة العالمي', assignedUserIds: ['1', '2', '5', '6'] },
-    { id: '2', name: 'مجمع واحة العلوم', assignedUserIds: ['3', '4', '5'] },
-    { id: '3', name: 'فيلا حي النخيل', assignedUserIds: ['1', '5'] },
-  ];
+  useEffect(() => {
+    const fetchData = async () => {
+      // 1. Load Projects
+      const allPrj = await dbService.getProjects(user.id);
+      const userProjects = allPrj.filter(prj => 
+        user.role === UserRole.ADMIN || 
+        user.role === UserRole.GENERAL_MANAGER || 
+        user.role === UserRole.PROCUREMENT_MANAGER ||
+        prj.assignedUserIds.includes(user.id)
+      );
+      setMyProjects(userProjects);
+      if (userProjects.length > 0) setSelectedProjectIdForNewReq(userProjects[0].id);
 
-  // Projects linked to current user
-  const myProjects = allProjects.filter(prj => 
-    user.role === UserRole.ADMIN || 
-    user.role === UserRole.GENERAL_MANAGER || 
-    user.role === UserRole.PROCUREMENT_MANAGER ||
-    prj.assignedUserIds.includes(user.id)
-  );
-  
+      // 2. Load Requests
+      const reqs = await dbService.getAllMaterialRequests();
+      setRequests(reqs);
+    };
+    fetchData();
+  }, [showForm]); // Refresh when form closes
+
   const catalogItems: Item[] = [
     { id: '1', name: 'أسمنت بورتلاندي 50كجم', sku: 'CM-001', unit: 'كيس', categoryId: '1', basePrice: 22, aliases: ['أسمنت عادي', 'أسمنت سعودي', 'أكياس خلط'] },
     { id: '2', name: 'حديد تسليح 12 مم', sku: 'ST-012', unit: 'طن', categoryId: '2', basePrice: 2800, aliases: ['حديد سابك', 'حديد 12', 'حديد تسليح'] },
@@ -58,47 +71,64 @@ const MaterialRequestView: React.FC<{ user: User }> = ({ user }) => {
     );
   }, [searchTerm]);
 
-  const [requests] = useState([
-    { id: 'MR-1001', project: 'برج التجارة العالمي', projectId: '1', date: '2024-05-18', status: RequestStatus.PENDING_TECHNICAL, totalItems: 5 },
-    { id: 'MR-1002', project: 'مجمع واحة العلوم', projectId: '2', date: '2024-05-19', status: RequestStatus.APPROVED_TECHNICAL, totalItems: 3 },
-    { id: 'MR-1003', project: 'فيلا حي النخيل', projectId: '3', date: '2024-05-20', status: RequestStatus.DRAFT, totalItems: 12 },
-  ]);
-
   const visibleRequests = useMemo(() => {
     const query = tableSearchQuery.trim().toLowerCase();
     return requests
       .filter(req => myProjects.some(p => p.id === req.projectId))
       .filter(req => selectedProjectFilter === 'all' || req.projectId === selectedProjectFilter)
-      .filter(req => !query || req.id.toLowerCase().includes(query) || req.project.toLowerCase().includes(query));
+      .filter(req => !query || req.id.toLowerCase().includes(query) || req.projectName.toLowerCase().includes(query));
   }, [requests, myProjects, tableSearchQuery, selectedProjectFilter]);
 
   const currentRequests = visibleRequests.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
 
   const addItemToRequest = (item: Item) => {
-    if (requestItems.find(i => i.id === item.id)) return;
-    setRequestItems([...requestItems, { ...item, quantity: 1 }]);
+    if (requestItems.find(i => i.itemId === item.id)) return;
+    setRequestItems([...requestItems, { itemId: item.id, name: item.name, unit: item.unit, quantity: 1 }]);
     setSearchTerm('');
   };
 
-  const handleSendForApproval = () => {
+  const handleCreateRequest = async () => {
     if (requestItems.length === 0) {
       alert("يرجى إضافة أصناف للطلب أولاً");
       return;
     }
-    alert("تم إرسال الطلب للمهندس المسؤول للتعميد الفني.");
+    
+    const project = myProjects.find(p => p.id === selectedProjectIdForNewReq);
+    
+    const newReq: MaterialRequest = {
+      id: `MR-${Date.now().toString().slice(-4)}`,
+      projectId: selectedProjectIdForNewReq,
+      projectName: project?.name || 'غير معروف',
+      requesterId: user.id,
+      requesterName: user.name,
+      status: RequestStatus.PENDING_TECHNICAL,
+      createdAt: new Date().toISOString().split('T')[0],
+      items: requestItems.map((item, idx) => ({
+        id: `ri-${Date.now()}-${idx}`,
+        itemId: item.itemId,
+        name: item.name,
+        unit: item.unit,
+        quantity: Number(item.quantity)
+      }))
+    };
+
+    await dbService.createMaterialRequest(newReq);
+    
+    alert("تم إنشاء الطلب بنجاح وإرساله للتعميد الفني.");
     setShowForm(false);
     setRequestItems([]);
   };
 
-  const highlightMatch = (text: string, query: string) => {
-    if (!query.trim()) return text;
-    const parts = text.split(new RegExp(`(${query})`, 'gi'));
-    return (
-      <span>
-        {parts.map((part, i) => part.toLowerCase() === query.toLowerCase() ? <span key={i} className="bg-emerald-100 text-emerald-900 px-0.5 rounded font-black">{part}</span> : part)}
-      </span>
-    );
+  const handleTechnicalApprove = async (reqId: string) => {
+    if(confirm("هل أنت متأكد من اعتماد المواصفات الفنية لهذا الطلب؟ سيظهر بعدها في قسم المشتريات.")) {
+      await dbService.updateMaterialRequestStatus(reqId, RequestStatus.APPROVED_TECHNICAL);
+      // Refresh Data
+      const reqs = await dbService.getAllMaterialRequests();
+      setRequests(reqs);
+    }
   };
+
+  const canApproveTechnical = user.role === UserRole.ENGINEER || user.role === UserRole.ADMIN || user.role === UserRole.GENERAL_MANAGER;
 
   return (
     <div className="space-y-6 animate-fadeIn pb-10">
@@ -111,7 +141,7 @@ const MaterialRequestView: React.FC<{ user: User }> = ({ user }) => {
           <button 
             disabled={myProjects.length === 0}
             onClick={() => { setShowForm(true); setRequestItems([]); }}
-            className={`bg-emerald-600 text-white px-8 py-3 rounded-2xl font-black flex items-center justify-center gap-2 transition-all shadow-xl shadow-emerald-100 ${myProjects.length === 0 ? 'opacity-50 cursor-not-allowed' : 'hover:bg-emerald-700 active:scale-95'}`}
+            className={`w-full md:w-auto bg-emerald-600 text-white px-8 py-3 rounded-2xl font-black flex items-center justify-center gap-2 transition-all shadow-xl shadow-emerald-100 ${myProjects.length === 0 ? 'opacity-50 cursor-not-allowed' : 'hover:bg-emerald-700 active:scale-95'}`}
           >
             <Plus size={20} />
             <span>طلب جديد</span>
@@ -120,6 +150,7 @@ const MaterialRequestView: React.FC<{ user: User }> = ({ user }) => {
       </div>
 
       <div className="bg-white rounded-3xl shadow-sm border border-slate-100 overflow-hidden min-h-[400px]">
+        {/* Mobile: Stacked inputs. Desktop: Row */}
         <div className="p-4 border-b border-slate-100 bg-slate-50/30 flex flex-col md:flex-row gap-4">
           <div className="relative flex-1">
             <Search className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
@@ -146,7 +177,7 @@ const MaterialRequestView: React.FC<{ user: User }> = ({ user }) => {
         </div>
 
         <div className="overflow-x-auto">
-          <table className="w-full text-right">
+          <table className="w-full text-right min-w-[700px]">
             <thead className="bg-slate-50/50 text-slate-500 text-[11px] font-black uppercase tracking-widest border-b border-slate-100">
               <tr>
                 <th className="px-6 py-4">رقم الطلب</th>
@@ -160,28 +191,39 @@ const MaterialRequestView: React.FC<{ user: User }> = ({ user }) => {
               {currentRequests.map((req) => (
                 <tr key={req.id} className="hover:bg-slate-50 transition-colors group">
                   <td className="px-6 py-4 font-black text-emerald-600">{req.id}</td>
-                  <td className="px-6 py-4 font-bold text-slate-700">{req.project}</td>
-                  <td className="px-6 py-4 text-slate-500 text-xs font-bold">{req.date}</td>
+                  <td className="px-6 py-4 font-bold text-slate-700">{req.projectName}</td>
+                  <td className="px-6 py-4 text-slate-500 text-xs font-bold">{req.createdAt}</td>
                   <td className="px-6 py-4">
-                    <span className={`px-3 py-1 rounded-lg text-[10px] font-black uppercase ${
+                    <span className={`px-3 py-1 rounded-lg text-[10px] font-black uppercase whitespace-nowrap ${
                       req.status === RequestStatus.APPROVED_TECHNICAL ? 'bg-emerald-100 text-emerald-700' :
                       req.status === RequestStatus.PENDING_TECHNICAL ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-600'
                     }`}>
                       {REQUEST_STATUS_LABELS[req.status]}
                     </span>
                   </td>
-                  <td className="px-6 py-4 text-center">
+                  <td className="px-6 py-4 text-center flex items-center justify-center gap-2">
+                    {/* زر التعميد الفني للاختبار وتسهيل التدفق */}
+                    {req.status === RequestStatus.PENDING_TECHNICAL && canApproveTechnical && (
+                      <button onClick={() => handleTechnicalApprove(req.id)} className="p-2 bg-emerald-50 text-emerald-600 rounded-lg hover:bg-emerald-600 hover:text-white transition-all" title="اعتماد فني">
+                        <CheckCircle2 size={16} />
+                      </button>
+                    )}
                     <button className="p-2 text-slate-400 hover:text-emerald-600"><FileText size={18} /></button>
                   </td>
                 </tr>
               ))}
+              {currentRequests.length === 0 && (
+                <tr>
+                   <td colSpan={5} className="p-8 text-center text-slate-400 font-bold">لا توجد طلبات مطابقة</td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
       </div>
 
       {showForm && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[60] p-4">
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
           <div className="bg-white rounded-3xl w-full max-w-2xl max-h-[90vh] overflow-hidden shadow-2xl flex flex-col animate-scaleUp">
             <div className="p-6 border-b bg-slate-50/50 flex justify-between items-center">
               <h3 className="text-xl font-black text-slate-800">إنشاء طلب مواد جديد</h3>
@@ -192,7 +234,11 @@ const MaterialRequestView: React.FC<{ user: User }> = ({ user }) => {
             <div className="p-6 overflow-y-auto flex-1 space-y-6">
               <div className="space-y-2">
                 <label className="text-xs font-black text-slate-400 uppercase tracking-widest ml-1">المشروع المستهدف</label>
-                <select className="w-full p-3.5 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-emerald-500 outline-none font-black text-slate-700">
+                <select 
+                   value={selectedProjectIdForNewReq}
+                   onChange={(e) => setSelectedProjectIdForNewReq(e.target.value)}
+                   className="w-full p-3.5 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-emerald-500 outline-none font-black text-slate-700"
+                >
                   {myProjects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                 </select>
               </div>
@@ -205,7 +251,7 @@ const MaterialRequestView: React.FC<{ user: User }> = ({ user }) => {
                     type="text" 
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
-                    placeholder="ابحث باسم الصنف أو الاسم البديل (مثلاً: حديد سابك)..."
+                    placeholder="ابحث باسم الصنف أو الاسم البديل..."
                     className="w-full pr-10 pl-4 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-emerald-500 outline-none font-bold text-sm"
                   />
                   {filteredItems.length > 0 && (
@@ -246,9 +292,9 @@ const MaterialRequestView: React.FC<{ user: User }> = ({ user }) => {
                  {requestItems.length === 0 && <div className="py-10 text-center text-slate-400 border-2 border-dashed rounded-3xl font-bold">لا توجد أصناف مضافة بعد</div>}
               </div>
             </div>
-            <div className="p-6 border-t bg-slate-50 flex justify-end gap-3">
-              <button onClick={() => setShowForm(false)} className="px-6 py-3 font-black text-slate-500 hover:bg-white rounded-2xl transition-all">إلغاء</button>
-              <button onClick={handleSendForApproval} className="px-10 py-3 bg-emerald-600 text-white rounded-2xl font-black shadow-xl shadow-emerald-100 hover:bg-emerald-700 transition-all">إرسال للتعميد الفني</button>
+            <div className="p-6 border-t bg-slate-50 flex flex-col sm:flex-row justify-end gap-3">
+              <button onClick={() => setShowForm(false)} className="w-full sm:w-auto px-6 py-3 font-black text-slate-500 hover:bg-white rounded-2xl transition-all">إلغاء</button>
+              <button onClick={handleCreateRequest} className="w-full sm:w-auto px-10 py-3 bg-emerald-600 text-white rounded-2xl font-black shadow-xl shadow-emerald-100 hover:bg-emerald-700 transition-all">إرسال للتعميد الفني</button>
             </div>
           </div>
         </div>

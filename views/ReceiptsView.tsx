@@ -1,219 +1,215 @@
 
-import React, { useState } from 'react';
-import { PackageOpen, Camera, QrCode, ClipboardCheck, History, Info, AlertTriangle, CheckCircle2 } from 'lucide-react';
-import { User } from '../types';
+import React, { useState, useEffect } from 'react';
+import { 
+  PackageOpen, Camera, QrCode, ClipboardCheck, History, CheckCircle2,
+  Building2, Truck, Filter, ArrowLeftRight, Archive, CalendarCheck
+} from 'lucide-react';
+import { User, PurchaseOrder, POItem } from '../types';
+import { dbService } from '../services/databaseService';
+import { BusinessRules } from '../services/businessRules';
 
 const ReceiptsView: React.FC<{ user: User }> = ({ user }) => {
+  const [activeTab, setActiveTab] = useState<'pending' | 'history'>('pending');
   const [poNumber, setPoNumber] = useState('');
   const [receiptSuccess, setReceiptSuccess] = useState(false);
   
-  // محاكاة بنود جدول الكميات للمشروع المرتبط بـ PO
-  const [receiptItems, setReceiptItems] = useState([
-    { id: 'it-1', name: 'أسمنت بورتلاندي', unit: 'كيس', scheduledTotal: 1000, alreadyReceived: 450, poExpected: 100, currentInput: 0 },
-    { id: 'it-2', name: 'حديد تسليح 12مم', unit: 'طن', scheduledTotal: 10, alreadyReceived: 8, poExpected: 1, currentInput: 0 },
-  ]);
+  // State linked to Database Tables
+  const [pendingPOs, setPendingPOs] = useState<PurchaseOrder[]>([]);
+  const [historyReceipts, setHistoryReceipts] = useState<any[]>([]);
+  
+  // Selected PO State
+  const [selectedPO, setSelectedPO] = useState<PurchaseOrder | null>(null);
+  const [inputQuantities, setInputQuantities] = useState<Record<string, number>>({});
 
-  const handleConfirmReceipt = () => {
-    if (!poNumber) {
-      alert("يرجى إدخال رقم أمر الشراء أولاً");
-      return;
-    }
-    
-    // محاكاة عملية الخصم من الـ BOQ
-    const updated = receiptItems.map(item => ({
-      ...item,
-      alreadyReceived: item.alreadyReceived + (Number(item.currentInput) || 0)
-    }));
-    
-    setReceiptItems(updated);
-    setReceiptSuccess(true);
-    setTimeout(() => setReceiptSuccess(false), 5000);
-    alert("تم تأكيد الاستلام وتحديث جدول كميات المشروع بنجاح.");
+  // Load Data
+  useEffect(() => {
+    const loadData = async () => {
+      const pos = await dbService.getPendingPOs();
+      // Filter only Approved POs for reception (System Logic)
+      setPendingPOs(pos.filter(p => p.status === 'APPROVED' || p.status === 'PARTIALLY_RECEIVED' || p.status === 'SENT_TO_SUPPLIER'));
+      
+      const hist = await dbService.getReceiptsHistory();
+      setHistoryReceipts(hist);
+    };
+    loadData();
+  }, [receiptSuccess]);
+
+  const handleSelectPO = (po: PurchaseOrder) => {
+    setPoNumber(po.id);
+    setSelectedPO(po);
+    // Reset inputs
+    const initialInputs: Record<string, number> = {};
+    po.items.forEach(item => initialInputs[item.itemId] = 0);
+    setInputQuantities(initialInputs);
   };
 
-  const handleInputChange = (id: string, val: string) => {
-    setReceiptItems(receiptItems.map(it => it.id === id ? { ...it, currentInput: Number(val) } : it));
+  const handleInputChange = (itemId: string, val: string) => {
+    setInputQuantities(prev => ({ ...prev, [itemId]: Number(val) }));
+  };
+
+  const handleConfirmReceipt = async () => {
+    if (!selectedPO) return;
+
+    // 1. Validation Phase (Business Logic Layer)
+    const itemsToReceive = [];
+    
+    for (const item of selectedPO.items) {
+      const inputQty = inputQuantities[item.itemId] || 0;
+      if (inputQty > 0) {
+        // BL-002 Rule Check
+        const validation = BusinessRules.validateReceiptQuantity(item, inputQty);
+        if (!validation.valid) {
+          alert(`خطأ في البند "${item.name}": ${validation.message}`);
+          return;
+        }
+
+        // BL-003 Rule Check (Optional Warning)
+        const boqList = await dbService.getProjectBOQ(selectedPO.projectId);
+        const boqItem = boqList.find(b => b.itemId === item.itemId);
+        if (boqItem) {
+           const boqCheck = BusinessRules.checkBOQStatus(boqItem, inputQty);
+           if (boqCheck.status === 'CRITICAL') {
+             if(!confirm(`تحذير حرج! ${boqCheck.message} هل تريد المتابعة رغم ذلك؟`)) return;
+           } else if (boqCheck.status === 'WARNING') {
+             alert(boqCheck.message);
+           }
+        }
+
+        itemsToReceive.push({ itemId: item.itemId, quantity: inputQty });
+      }
+    }
+
+    if (itemsToReceive.length === 0) {
+      alert("يجب إدخال كمية مستلمة لبند واحد على الأقل.");
+      return;
+    }
+
+    // 2. Execution Phase (Database Layer)
+    const success = await dbService.createReceipt({
+      id: `REC-${Date.now()}`,
+      poId: selectedPO.id,
+      projectId: selectedPO.projectId,
+      receivedDate: new Date().toISOString().split('T')[0],
+      receivedBy: user.name,
+      items: itemsToReceive
+    });
+
+    if (success) {
+      setReceiptSuccess(true);
+      setPoNumber('');
+      setSelectedPO(null);
+      setTimeout(() => setReceiptSuccess(false), 5000);
+    }
   };
 
   return (
     <div className="space-y-6 animate-fadeIn pb-10">
-      <div className="flex justify-between items-center">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
-          <h2 className="text-2xl font-bold text-slate-800">استلام المواد</h2>
-          <p className="text-slate-500">تسجيل دخول المواد للموقع وتحديث كميات المشروع المجدولة (BOQ).</p>
+          <h2 className="text-2xl font-bold text-slate-800">إدارة المخزون والاستلام</h2>
+          <p className="text-slate-500">تطبيق قواعد العمل (Business Rules) على التوريدات الواردة.</p>
         </div>
-        <button className="bg-slate-800 text-white px-6 py-2.5 rounded-xl font-bold flex items-center gap-2 hover:bg-slate-900 transition-all shadow-md">
-          <History size={20} />
-          <span className="hidden sm:inline">سجل الاستلامات</span>
-        </button>
+        
+        <div className="flex bg-white p-1 rounded-2xl border border-slate-200 shadow-sm w-full md:w-auto overflow-x-auto">
+           <button onClick={() => setActiveTab('pending')} className={`px-4 md:px-6 py-2.5 rounded-xl text-sm font-black transition-all flex items-center gap-2 whitespace-nowrap ${activeTab === 'pending' ? 'bg-emerald-600 text-white shadow-lg' : 'text-slate-500 hover:bg-slate-50'}`}>
+             <PackageOpen size={18} /> استلام جديد
+           </button>
+           <button onClick={() => setActiveTab('history')} className={`px-4 md:px-6 py-2.5 rounded-xl text-sm font-black transition-all flex items-center gap-2 whitespace-nowrap ${activeTab === 'history' ? 'bg-slate-800 text-white shadow-lg' : 'text-slate-500 hover:bg-slate-50'}`}>
+             <History size={18} /> السجل
+           </button>
+        </div>
       </div>
 
       {receiptSuccess && (
         <div className="bg-emerald-50 border border-emerald-200 p-4 rounded-2xl flex items-center gap-3 text-emerald-700 animate-bounce">
-          <CheckCircle2 size={24} />
-          <p className="font-black">تمت العملية بنجاح! تم تحديث رصيد المخزن وجدول الكميات للمشروع.</p>
+          <CheckCircle2 size={24} className="shrink-0" />
+          <p className="font-black">تم الاستلام وتحديث الجداول (PO & BOQ) بنجاح!</p>
         </div>
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        <div className="bg-white p-8 rounded-3xl shadow-sm border border-slate-100">
-          <h3 className="text-xl font-bold mb-6 flex items-center gap-2">
-            <ClipboardCheck className="text-emerald-600" />
-            نموذج استلام مستندي
-          </h3>
-          <div className="space-y-6">
-            <div className="space-y-2">
-              <label className="text-xs font-black text-slate-400 uppercase tracking-widest mr-1">رقم أمر الشراء (PO)</label>
-              <div className="flex gap-2">
-                <input 
-                  type="text" 
-                  value={poNumber}
-                  onChange={(e) => setPoNumber(e.target.value)}
-                  placeholder="أدخل رقم PO (مثلاً: PO-2024-001)" 
-                  className="flex-1 p-3.5 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-emerald-500 outline-none font-bold transition-all"
-                />
-                <button className="bg-emerald-100 text-emerald-700 p-3.5 rounded-2xl hover:bg-emerald-200 transition-colors">
-                  <QrCode size={24} />
+      {activeTab === 'pending' ? (
+        <>
+          <div className="bg-white p-5 rounded-3xl shadow-sm border border-slate-100">
+             <h3 className="text-sm font-black text-slate-800 mb-4 flex items-center gap-2"><Filter size={16}/> أوامر الشراء الجاهزة للاستلام</h3>
+             <div className="flex gap-3 overflow-x-auto pb-4 no-scrollbar">
+                {pendingPOs.map(po => (
+                   <button 
+                      key={po.id}
+                      onClick={() => handleSelectPO(po)}
+                      className={`min-w-[240px] p-4 rounded-2xl border text-right transition-all shrink-0 ${selectedPO?.id === po.id ? 'bg-emerald-50 border-emerald-500 ring-1 ring-emerald-500' : 'bg-slate-50 border-slate-200 hover:border-emerald-300'}`}
+                   >
+                      <div className="flex justify-between items-start mb-2">
+                         <span className="font-black text-slate-800 text-sm">{po.id}</span>
+                         <span className="text-[10px] bg-white px-2 py-0.5 rounded border text-slate-500">{po.createdAt}</span>
+                      </div>
+                      <p className="text-xs font-bold text-emerald-700 mb-0.5 truncate">{po.supplierName}</p>
+                      <p className="text-[10px] text-slate-500 truncate">{po.projectName}</p>
+                   </button>
+                ))}
+                {pendingPOs.length === 0 && <p className="text-sm text-slate-400 font-bold p-4">لا توجد أوامر شراء معتمدة بانتظار الاستلام.</p>}
+             </div>
+          </div>
+
+          {selectedPO && (
+            <div className="bg-white p-5 md:p-8 rounded-3xl shadow-sm border border-slate-100 animate-slideUp">
+              <h3 className="text-xl font-bold mb-6 flex items-center gap-2">
+                <ClipboardCheck className="text-emerald-600" /> نموذج استلام: {selectedPO.id}
+              </h3>
+              
+              <div className="space-y-4">
+                <div className="flex justify-between items-center border-b border-slate-100 pb-2">
+                  <h4 className="font-black text-slate-800 text-sm">بنود الطلب (تطبيق القاعدة BL-002)</h4>
+                </div>
+                
+                <div className="space-y-3">
+                  {selectedPO.items.map((item) => {
+                    const remaining = item.quantity - item.receivedQuantity;
+                    // Skip fully received items
+                    if (remaining <= 0) return null;
+
+                    const currentInput = inputQuantities[item.itemId] || 0;
+                    const isOverLimit = currentInput > remaining;
+
+                    return (
+                      <div key={item.id} className={`p-4 bg-white border rounded-2xl space-y-3 transition-all ${isOverLimit ? 'border-red-200 bg-red-50/20' : 'border-slate-200'}`}>
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                          <div>
+                            <p className="font-black text-slate-800 text-sm">{item.name}</p>
+                            <p className="text-[10px] text-slate-400 font-bold">المطلوب كلياً: {item.quantity} | تم استلام: {item.receivedQuantity} | <span className="text-emerald-600">المتبقي: {remaining} {item.unit}</span></p>
+                          </div>
+                          <div className="relative self-end sm:self-auto">
+                            <input 
+                              type="number" 
+                              min="0"
+                              max={remaining}
+                              value={currentInput || ''}
+                              onChange={(e) => handleInputChange(item.itemId, e.target.value)}
+                              className={`w-28 p-2 border rounded-xl text-center font-black focus:ring-2 outline-none transition-all ${isOverLimit ? 'border-red-500 bg-red-50 text-red-600' : 'bg-slate-50 border-slate-200 focus:ring-emerald-500'}`}
+                              placeholder="الكمية"
+                            />
+                            {isOverLimit && <div className="absolute top-full right-0 text-[9px] text-red-600 font-black mt-1">تجاوز الحد!</div>}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <button 
+                  onClick={handleConfirmReceipt}
+                  className="w-full py-4 bg-emerald-600 text-white rounded-2xl font-black text-lg hover:bg-emerald-700 shadow-xl shadow-emerald-100 transition-all mt-6"
+                >
+                  تأكيد الاستلام وترحيل للجرد
                 </button>
               </div>
             </div>
-
-            <div className="p-4 bg-slate-50 rounded-2xl border border-dashed border-slate-300 flex flex-col items-center justify-center space-y-3 py-8 cursor-pointer hover:bg-slate-100 transition-all group">
-               <Camera size={40} className="text-slate-400 group-hover:text-emerald-500 transition-colors" />
-               <p className="text-sm font-bold text-slate-500">إرفاق صورة سند الاستلام / البضاعة</p>
-               <input type="file" className="hidden" />
-            </div>
-
-            <div className="space-y-4">
-              <div className="flex justify-between items-center border-b border-slate-100 pb-2">
-                <h4 className="font-black text-slate-800 text-sm">الأصناف الموردة في هذا الأمر</h4>
-                <div className="flex items-center gap-1 text-[10px] bg-blue-50 text-blue-600 px-2 py-1 rounded font-black uppercase">
-                  <Info size={12} /> تفعيل التتبع التلقائي للـ BOQ
-                </div>
-              </div>
-              
-              <div className="space-y-3">
-                {receiptItems.map((item) => (
-                  <div key={item.id} className="p-5 bg-white border border-slate-200 rounded-2xl space-y-4 hover:border-emerald-200 transition-all">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="font-black text-slate-800">{item.name}</p>
-                        <p className="text-[10px] text-slate-400 font-bold">الكمية المتوقعة في PO: {item.poExpected} {item.unit}</p>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <input 
-                          type="number" 
-                          value={item.currentInput || ''}
-                          onChange={(e) => handleInputChange(item.id, e.target.value)}
-                          placeholder="0" 
-                          className="w-24 p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-center font-black focus:ring-2 focus:ring-emerald-500 outline-none"
-                        />
-                        <span className="text-xs text-slate-400 font-bold">{item.unit}</span>
-                      </div>
-                    </div>
-                    
-                    <div className="pt-3 border-t border-slate-50">
-                       <div className="flex justify-between items-center text-[10px] mb-2 font-black uppercase tracking-tight">
-                          <span className="text-slate-400">حالة استهلاك الكمية المجدولة للمشروع:</span>
-                          <span className="text-emerald-600">{item.alreadyReceived + (Number(item.currentInput) || 0)} / {item.scheduledTotal} {item.unit}</span>
-                       </div>
-                       <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden shadow-inner">
-                          <div 
-                            className={`h-full transition-all duration-700 ${((item.alreadyReceived + (Number(item.currentInput) || 0)) / item.scheduledTotal) > 0.9 ? 'bg-red-500' : 'bg-emerald-500'}`} 
-                            style={{ width: `${Math.min(100, ((item.alreadyReceived + (Number(item.currentInput) || 0)) / item.scheduledTotal) * 100)}%` }}
-                          ></div>
-                       </div>
-                       {(item.alreadyReceived + (Number(item.currentInput) || 0)) >= item.scheduledTotal && (
-                         <div className="mt-3 flex items-center gap-1 text-[10px] text-red-600 font-black bg-red-50 p-2 rounded-lg border border-red-100">
-                            <AlertTriangle size={14} /> تنبيه: الكمية المستلمة ستتجاوز المجدول لهذا المشروع!
-                         </div>
-                       )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <button 
-              onClick={handleConfirmReceipt}
-              className="w-full py-4 bg-emerald-600 text-white rounded-2xl font-black text-lg hover:bg-emerald-700 shadow-xl shadow-emerald-100 transition-all active:scale-[0.98]"
-            >
-              تأكيد الاستلام وخصم الكميات
-            </button>
-          </div>
+          )}
+        </>
+      ) : (
+        <div className="bg-white rounded-3xl shadow-sm border border-slate-100 p-8 text-center text-slate-500 font-bold">
+           هذه الواجهة تعرض البيانات من جدول "Receipts" (غير مفعلة في العرض التجريبي الحالي بشكل كامل).
         </div>
-
-        <div className="space-y-6">
-          <div className="bg-slate-900 text-white p-8 rounded-3xl shadow-2xl relative overflow-hidden group border border-slate-800">
-            <PackageOpen className="absolute -right-6 -bottom-6 text-white/10 w-48 h-48 group-hover:scale-110 transition-transform duration-1000" />
-            <div className="relative z-10">
-              <h3 className="text-xl font-black mb-2 flex items-center gap-2">تتبع ميزانية الكميات <span className="bg-emerald-500/20 text-emerald-400 text-[10px] px-2 py-0.5 rounded border border-emerald-500/20">LIVE BOQ</span></h3>
-              <p className="text-slate-400 text-sm mb-8 font-bold tracking-tight">المشروع: برج التجارة العالمي - المرحلة الإنشائية</p>
-              
-              <div className="space-y-6">
-                 {receiptItems.map((item, i) => (
-                    <div key={i}>
-                      <div className="flex justify-between text-xs mb-2 font-black uppercase tracking-widest">
-                        <span className="flex items-center gap-2 text-slate-300">{item.name} <span className="text-slate-500 font-medium">({item.alreadyReceived} / {item.scheduledTotal})</span></span>
-                        <span className={((item.alreadyReceived / item.scheduledTotal) > 0.8) ? 'text-red-400' : 'text-emerald-400'}>
-                          {Math.round((item.alreadyReceived / item.scheduledTotal) * 100)}%
-                        </span>
-                      </div>
-                      <div className="w-full bg-white/5 h-2.5 rounded-full overflow-hidden">
-                        <div 
-                          className={`h-full transition-all duration-1000 shadow-[0_0_12px_rgba(16,185,129,0.3)] ${((item.alreadyReceived / item.scheduledTotal) > 0.8) ? 'bg-red-500' : 'bg-emerald-500'}`}
-                          style={{ width: `${(item.alreadyReceived / item.scheduledTotal) * 100}%` }}
-                        ></div>
-                      </div>
-                    </div>
-                 ))}
-              </div>
-              
-              <div className="mt-10 pt-8 border-t border-white/5 grid grid-cols-3 gap-4 text-center">
-                 <div>
-                    <p className="text-[10px] text-slate-500 font-black uppercase tracking-tighter mb-1">إجمالي البنود</p>
-                    <p className="text-2xl font-black">24</p>
-                 </div>
-                 <div>
-                    <p className="text-[10px] text-slate-500 font-black uppercase tracking-tighter mb-1">نسبة الإنجاز</p>
-                    <p className="text-2xl font-black text-emerald-400">58%</p>
-                 </div>
-                 <div>
-                    <p className="text-[10px] text-slate-500 font-black uppercase tracking-tighter mb-1">طلبات قيد التوريد</p>
-                    <p className="text-2xl font-black text-amber-400">7</p>
-                 </div>
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100">
-            <h3 className="text-lg font-black mb-6 flex items-center gap-2 text-slate-800">
-              <History className="text-slate-400" size={20} />
-              آخر عمليات الخصم من ميزانية الكميات
-            </h3>
-            <div className="space-y-4">
-               {[
-                 { id: 'RC-991', desc: 'استلام دفعة أسمنت', qty: '100 كيس', time: 'قبل قليل' },
-                 { id: 'RC-989', desc: 'توريد حديد سابك', qty: '2 طن', time: 'أمس' },
-                 { id: 'RC-985', desc: 'استلام رمل أحمر', qty: '20 م3', time: 'قبل يومين' },
-               ].map((log, i) => (
-                 <div key={i} className="flex gap-4 p-4 hover:bg-slate-50 border border-slate-50 rounded-2xl transition-all group cursor-default">
-                   <div className="w-12 h-12 bg-slate-100 rounded-xl flex items-center justify-center text-slate-400 group-hover:bg-emerald-50 group-hover:text-emerald-600 transition-all duration-300">
-                     <PackageOpen size={24} />
-                   </div>
-                   <div className="flex-1">
-                     <div className="flex justify-between items-start">
-                        <p className="font-black text-sm text-slate-800">{log.desc}</p>
-                        <span className="text-[10px] text-slate-400 font-bold uppercase">{log.time}</span>
-                     </div>
-                     <p className="text-[11px] text-slate-500 mt-1">تم خصم <span className="font-black text-emerald-600">{log.qty}</span> من جدول كميات المشروع. كود العملية: <span className="font-mono">{log.id}</span></p>
-                   </div>
-                 </div>
-               ))}
-            </div>
-          </div>
-        </div>
-      </div>
+      )}
     </div>
   );
 };

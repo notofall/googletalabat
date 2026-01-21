@@ -53,15 +53,16 @@ const App: React.FC = () => {
       {/* Mobile Sidebar Overlay */}
       {isSidebarOpen && (
         <div 
-          className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-40 lg:hidden transition-opacity"
+          className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[60] lg:hidden transition-opacity"
           onClick={() => setIsSidebarOpen(false)}
         ></div>
       )}
 
       {/* Sidebar - Desktop and Mobile Drawer */}
+      {/* Z-Index raised to 70 to ensure it sits above everything on mobile */}
       <div className={`
-        fixed inset-y-0 right-0 z-50 transform transition-transform duration-300 ease-in-out lg:relative lg:translate-x-0
-        ${isSidebarOpen ? 'translate-x-0' : 'translate-x-full'}
+        fixed inset-y-0 right-0 z-[70] w-72 transform transition-transform duration-300 ease-in-out lg:relative lg:translate-x-0 bg-[#0f172a]
+        ${isSidebarOpen ? 'translate-x-0 shadow-2xl' : 'translate-x-full lg:shadow-none'}
       `}>
         <Sidebar 
           user={user} 
@@ -76,19 +77,23 @@ const App: React.FC = () => {
       </div>
 
       {/* Main Content Area */}
-      <div className="flex-1 flex flex-col h-full overflow-hidden">
+      <div className="flex-1 flex flex-col h-full w-full overflow-hidden relative">
         {/* Mobile Header */}
-        <header className="lg:hidden bg-white border-b border-slate-200 px-4 py-3 flex items-center justify-between z-30 shadow-sm">
-          <button onClick={toggleSidebar} className="p-2 text-slate-600 hover:bg-slate-100 rounded-lg">
+        <header className="lg:hidden bg-white border-b border-slate-200 px-4 py-3 flex items-center justify-between z-40 sticky top-0 shadow-sm shrink-0">
+          <button onClick={toggleSidebar} className="p-2 text-slate-600 hover:bg-slate-100 rounded-lg active:scale-95 transition-transform">
             <Menu size={24} />
           </button>
           <div className="flex items-center gap-2">
-            <span className="font-black text-emerald-600 text-lg">إتقان</span>
+            <span className="font-black text-slate-800 text-lg">إتقان</span>
+            <span className="text-[10px] bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full font-bold">Mobile</span>
           </div>
-          <div className="w-10"></div> {/* Spacer to center title */}
+          {/* Placeholder to balance the menu button */}
+          <div className="w-10"></div> 
         </header>
 
-        <main className="flex-1 overflow-y-auto p-4 md:p-8 scroll-smooth">
+        {/* Scrollable Main View */}
+        {/* Reduced padding for mobile (p-4) vs desktop (md:p-8) */}
+        <main className="flex-1 overflow-y-auto p-4 md:p-6 lg:p-8 scroll-smooth w-full max-w-[100vw]">
           {renderContent()}
         </main>
       </div>

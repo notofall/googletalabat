@@ -1,5 +1,5 @@
 
-import React, { useState, useRef, useMemo } from 'react';
+import React, { useState, useRef, useMemo, useEffect } from 'react';
 import { 
   Building2, 
   Users, 
@@ -29,24 +29,41 @@ import {
   ShieldCheck,
   UserCheck,
   ToggleLeft,
-  ToggleRight
+  ToggleRight,
+  UserPlus
 } from 'lucide-react';
 import { Item, UserRole, Project, Supplier, User } from '../types';
+import { dbService } from '../services/databaseService';
+import { ROLE_NAMES } from '../constants';
 
 const MasterDataView: React.FC<{ user: User }> = ({ user }) => {
   const [currentSection, setCurrentSection] = useState<'projects' | 'suppliers' | 'catalog' | 'budget' | 'permissions'>('projects');
   const [selectedProject, setSelectedProject] = useState<any>(null);
-  const [editingItem, setEditingItem] = useState<Item | null>(null);
-  const [deletingSupplier, setDeletingSupplier] = useState<Supplier | null>(null);
-  const [deletingCatalogItem, setDeletingCatalogItem] = useState<Item | null>(null);
   const [globalSearchQuery, setGlobalSearchQuery] = useState('');
   
-  // بيانات تجريبية للمستخدمين لإدارة صلاحياتهم
-  const [systemUsers, setSystemUsers] = useState<User[]>([
-    { id: '1', name: 'أحمد المشرف', email: 'supervisor@itqan.sa', role: UserRole.SUPERVISOR, canEditPOPrices: false },
-    { id: '3', name: 'ياسر مدير المشتريات', email: 'pm@itqan.sa', role: UserRole.PROCUREMENT_MANAGER, approvalLimit: 50000, canEditPOPrices: true },
-    { id: '6', name: 'م. عمر مهندس كميات', email: 'qs@itqan.sa', role: UserRole.QUANTITY_SURVEYOR, canEditPOPrices: false },
-  ]);
+  // Data States
+  const [systemUsers, setSystemUsers] = useState<User[]>([]);
+  const [showAddUserModal, setShowAddUserModal] = useState(false);
+  
+  // New User Form State
+  const [newUser, setNewUser] = useState({
+    name: '',
+    email: '',
+    role: UserRole.ENGINEER,
+    canEditPOPrices: false,
+    approvalLimit: 0
+  });
+
+  useEffect(() => {
+    // Load users from DB service
+    const fetchUsers = async () => {
+      const users = await dbService.getAllUsers();
+      setSystemUsers(users);
+    };
+    if (currentSection === 'permissions') {
+      fetchUsers();
+    }
+  }, [currentSection, showAddUserModal]);
 
   const canManageData = user.role === UserRole.ADMIN || user.role === UserRole.QUANTITY_SURVEYOR || user.role === UserRole.GENERAL_MANAGER;
 
@@ -65,19 +82,36 @@ const MasterDataView: React.FC<{ user: User }> = ({ user }) => {
     { id: 'suppliers', label: 'الموردين', icon: Users },
     { id: 'catalog', label: 'الكتالوج', icon: Package },
     { id: 'budget', label: 'الميزانية', icon: Tags },
-    ...(user.role === UserRole.ADMIN || user.role === UserRole.GENERAL_MANAGER ? [{ id: 'permissions', label: 'إدارة الصلاحيات', icon: ShieldCheck }] : []),
+    ...(user.role === UserRole.ADMIN || user.role === UserRole.GENERAL_MANAGER ? [{ id: 'permissions', label: 'المستخدمين والصلاحيات', icon: ShieldCheck }] : []),
   ];
 
-  const toggleUserPermission = (userId: string) => {
-    setSystemUsers(systemUsers.map(u => 
-      u.id === userId ? { ...u, canEditPOPrices: !u.canEditPOPrices } : u
-    ));
-    alert("تم تحديث صلاحيات المستخدم بنجاح.");
+  const toggleUserPermission = async (userId: string, currentVal: boolean) => {
+    await dbService.updateUserPermissions(userId, { canEditPOPrices: !currentVal });
+    const updatedUsers = await dbService.getAllUsers();
+    setSystemUsers(updatedUsers);
+  };
+
+  const handleCreateUser = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      await dbService.createUser({
+        name: newUser.name,
+        email: newUser.email,
+        role: newUser.role,
+        canEditPOPrices: newUser.canEditPOPrices,
+        approvalLimit: Number(newUser.approvalLimit)
+      });
+      alert('تم إنشاء المستخدم بنجاح');
+      setShowAddUserModal(false);
+      setNewUser({ name: '', email: '', role: UserRole.ENGINEER, canEditPOPrices: false, approvalLimit: 0 });
+    } catch (error: any) {
+      alert(error.message);
+    }
   };
 
   const [projects] = useState<Project[]>([
-    { id: '1', name: 'برج التجارة العالمي', code: 'PRJ-001', budget: 2500000, spent: 1250000, status: 'نشط', levelsCount: 12, assignedUserIds: ['1', '2', '5', '6'], scheduledQuantities: [] },
-    { id: '2', name: 'مجمع واحة العلوم', code: 'PRJ-002', budget: 1800000, spent: 1650000, status: 'نشط', levelsCount: 4, assignedUserIds: ['3', '4', '5'], scheduledQuantities: [] }
+    { id: '1', name: 'برج التجارة العالمي', code: 'PRJ-001', budget: 2500000, spent: 1250000, status: 'نشط', assignedUserIds: ['1', '2', '5', '6'] },
+    { id: '2', name: 'مجمع واحة العلوم', code: 'PRJ-002', budget: 1800000, spent: 1650000, status: 'نشط', assignedUserIds: ['3', '4', '5'] }
   ]);
 
   const [suppliers, setSuppliers] = useState<Supplier[]>([
@@ -149,7 +183,9 @@ const MasterDataView: React.FC<{ user: User }> = ({ user }) => {
               className="w-full pr-10 pl-4 py-3 bg-white border border-slate-200 rounded-2xl focus:ring-2 focus:ring-emerald-500 transition-all font-bold text-sm"
             />
           </div>
-          {currentSection !== 'permissions' && (
+          {currentSection === 'permissions' ? (
+             <button onClick={() => setShowAddUserModal(true)} className="bg-emerald-600 text-white px-8 py-3 rounded-2xl font-black flex items-center justify-center gap-2 hover:bg-emerald-700 transition-all"><UserPlus size={20} /> إضافة مستخدم</button>
+          ) : (
              <button className="bg-slate-900 text-white px-8 py-3 rounded-2xl font-black flex items-center justify-center gap-2 hover:bg-slate-800 transition-all"><Plus size={20} /> إضافة جديد</button>
           )}
         </div>
@@ -160,8 +196,8 @@ const MasterDataView: React.FC<{ user: User }> = ({ user }) => {
                <div className="bg-amber-50 p-6 rounded-3xl border border-amber-100 mb-8 flex items-start gap-6">
                   <ShieldCheck className="text-amber-600 shrink-0" size={32} />
                   <div>
-                     <h4 className="text-lg font-black text-amber-900 mb-1">إدارة صلاحيات تعديل المشتريات</h4>
-                     <p className="text-sm font-bold text-amber-800 leading-relaxed">تتيح هذه الصلاحية لمدير المشتريات تعديل أسعار الأصناف في أوامر الشراء "بعد" صدورها. يُنصح بتفعيلها فقط في الحالات التي يتم فيها إصدار أوامر شراء تقديرية ثم تفريغ السعر النهائي من الفاتورة المستلمة.</p>
+                     <h4 className="text-lg font-black text-amber-900 mb-1">إدارة المستخدمين وصلاحيات المشتريات</h4>
+                     <p className="text-sm font-bold text-amber-800 leading-relaxed">قم بإضافة المستخدمين وتعيين أدوارهم الوظيفية. تتيح صلاحية "تعديل أسعار PO" للمستخدم تغيير الأسعار في أوامر الشراء بعد إصدارها.</p>
                   </div>
                </div>
                
@@ -171,7 +207,8 @@ const MasterDataView: React.FC<{ user: User }> = ({ user }) => {
                        <tr>
                           <th className="p-6">المستخدم</th>
                           <th className="p-6">الدور الوظيفي</th>
-                          <th className="p-6">صلاحية تعديل أسعار PO</th>
+                          <th className="p-6">حد الصلاحية المالية</th>
+                          <th className="p-6">تعديل الأسعار</th>
                           <th className="p-6 text-center">الإجراء</th>
                        </tr>
                     </thead>
@@ -183,29 +220,73 @@ const MasterDataView: React.FC<{ user: User }> = ({ user }) => {
                                <p className="text-xs text-slate-400 font-bold">{u.email}</p>
                             </td>
                             <td className="p-6">
-                               <span className="text-xs font-black bg-slate-100 px-3 py-1 rounded-lg text-slate-600 tracking-tighter">{u.role}</span>
+                               <span className="text-xs font-black bg-slate-100 px-3 py-1 rounded-lg text-slate-600 tracking-tighter">{ROLE_NAMES[u.role] || u.role}</span>
+                            </td>
+                            <td className="p-6 text-sm font-bold">
+                               {u.approvalLimit ? `${u.approvalLimit.toLocaleString()} ر.س` : '-'}
                             </td>
                             <td className="p-6">
                                <div className="flex items-center gap-3">
                                   {u.canEditPOPrices ? (
-                                    <span className="bg-emerald-100 text-emerald-700 text-[10px] font-black px-3 py-1 rounded-full border border-emerald-200 flex items-center gap-1"><UserCheck size={12}/> مسموح بالتعديل</span>
+                                    <span className="bg-emerald-100 text-emerald-700 text-[10px] font-black px-3 py-1 rounded-full border border-emerald-200 flex items-center gap-1"><UserCheck size={12}/> مسموح</span>
                                   ) : (
-                                    <span className="bg-red-50 text-red-700 text-[10px] font-black px-3 py-1 rounded-full border border-red-100 flex items-center gap-1"><Lock size={12}/> التعديل محجوب</span>
+                                    <span className="bg-slate-100 text-slate-400 text-[10px] font-black px-3 py-1 rounded-full border border-slate-200 flex items-center gap-1"><Lock size={12}/> محجوب</span>
                                   )}
                                </div>
                             </td>
                             <td className="p-6 text-center">
                                <button 
-                                  onClick={() => toggleUserPermission(u.id)}
+                                  onClick={() => toggleUserPermission(u.id, u.canEditPOPrices)}
                                   className={`p-3 rounded-2xl transition-all flex items-center justify-center gap-2 font-black text-xs mx-auto ${u.canEditPOPrices ? 'bg-red-50 text-red-600 hover:bg-red-100' : 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100'}`}
                                >
-                                  {u.canEditPOPrices ? <><ToggleRight size={24}/> سحب الصلاحية</> : <><ToggleLeft size={24}/> منح الصلاحية</>}
+                                  {u.canEditPOPrices ? <><ToggleRight size={20}/></> : <><ToggleLeft size={20}/></>}
                                </button>
                             </td>
                          </tr>
                        ))}
                     </tbody>
                   </table>
+               </div>
+            </div>
+          )}
+          
+          {/* Modal for adding user */}
+          {showAddUserModal && (
+            <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
+               <div className="bg-white rounded-3xl w-full max-w-lg shadow-2xl animate-scaleUp overflow-hidden">
+                  <div className="p-6 border-b bg-slate-50 flex justify-between items-center">
+                     <h3 className="text-xl font-black text-slate-800">إضافة مستخدم جديد</h3>
+                     <button onClick={() => setShowAddUserModal(false)} className="text-slate-400 hover:text-slate-600"><X size={24}/></button>
+                  </div>
+                  <form onSubmit={handleCreateUser} className="p-6 space-y-4">
+                     <div className="space-y-2">
+                        <label className="text-xs font-black text-slate-500">الاسم الكامل</label>
+                        <input required type="text" value={newUser.name} onChange={e => setNewUser({...newUser, name: e.target.value})} className="w-full p-3 border rounded-xl font-bold" />
+                     </div>
+                     <div className="space-y-2">
+                        <label className="text-xs font-black text-slate-500">البريد الإلكتروني</label>
+                        <input required type="email" value={newUser.email} onChange={e => setNewUser({...newUser, email: e.target.value})} className="w-full p-3 border rounded-xl font-bold" />
+                     </div>
+                     <div className="space-y-2">
+                        <label className="text-xs font-black text-slate-500">الدور الوظيفي</label>
+                        <select value={newUser.role} onChange={e => setNewUser({...newUser, role: e.target.value as UserRole})} className="w-full p-3 border rounded-xl font-bold">
+                           {Object.entries(ROLE_NAMES).map(([role, label]) => (
+                             <option key={role} value={role}>{label}</option>
+                           ))}
+                        </select>
+                     </div>
+                     <div className="flex items-center gap-4">
+                        <div className="flex-1 space-y-2">
+                           <label className="text-xs font-black text-slate-500">سقف الصلاحية المالية</label>
+                           <input type="number" value={newUser.approvalLimit} onChange={e => setNewUser({...newUser, approvalLimit: Number(e.target.value)})} className="w-full p-3 border rounded-xl font-bold" />
+                        </div>
+                        <div className="flex items-center gap-2 pt-6">
+                           <input type="checkbox" checked={newUser.canEditPOPrices} onChange={e => setNewUser({...newUser, canEditPOPrices: e.target.checked})} className="w-5 h-5 accent-emerald-600" />
+                           <span className="text-xs font-black text-slate-700">تعديل أسعار PO</span>
+                        </div>
+                     </div>
+                     <button type="submit" className="w-full py-4 bg-emerald-600 text-white rounded-2xl font-black mt-4 hover:bg-emerald-700">حفظ المستخدم</button>
+                  </form>
                </div>
             </div>
           )}
