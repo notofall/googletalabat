@@ -1,20 +1,9 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
 import { 
-  Plus, 
-  Trash2, 
-  Search, 
-  Filter, 
-  FileSpreadsheet, 
-  FileText, 
-  Download, 
-  Tag, 
-  SearchCheck, 
-  ChevronRight, 
-  ChevronLeft,
-  Building2,
-  ChevronDown,
-  CheckCircle2
+  Plus, Trash2, Search, Filter, FileSpreadsheet, FileText, 
+  Download, Tag, SearchCheck, ChevronRight, ChevronLeft, 
+  Building2, ChevronDown, CheckCircle2
 } from 'lucide-react';
 import { User, RequestStatus, Item, UserRole, MaterialRequest } from '../types';
 import { REQUEST_STATUS_LABELS } from '../constants';
@@ -32,6 +21,7 @@ const MaterialRequestView: React.FC<{ user: User }> = ({ user }) => {
   // Real Data State
   const [requests, setRequests] = useState<MaterialRequest[]>([]);
   const [myProjects, setMyProjects] = useState<any[]>([]);
+  const [catalogItems, setCatalogItems] = useState<Item[]>([]);
 
   const itemsPerPage = 5;
 
@@ -48,18 +38,12 @@ const MaterialRequestView: React.FC<{ user: User }> = ({ user }) => {
       setMyProjects(userProjects);
       if (userProjects.length > 0) setSelectedProjectIdForNewReq(userProjects[0].id);
 
-      // 2. Load Requests
-      const reqs = await dbService.getAllMaterialRequests();
-      setRequests(reqs);
+      // 2. Load Requests & Catalog
+      setRequests(await dbService.getAllMaterialRequests());
+      setCatalogItems(await dbService.getCatalogItems());
     };
     fetchData();
-  }, [showForm]); // Refresh when form closes
-
-  const catalogItems: Item[] = [
-    { id: '1', name: 'أسمنت بورتلاندي 50كجم', sku: 'CM-001', unit: 'كيس', categoryId: '1', basePrice: 22, aliases: ['أسمنت عادي', 'أسمنت سعودي', 'أكياس خلط'] },
-    { id: '2', name: 'حديد تسليح 12 مم', sku: 'ST-012', unit: 'طن', categoryId: '2', basePrice: 2800, aliases: ['حديد سابك', 'حديد 12', 'حديد تسليح'] },
-    { id: '3', name: 'رمل أحمر مغسول', sku: 'SN-002', unit: 'م3', categoryId: '3', basePrice: 45, aliases: ['رمل بناء', 'رمل ناعم'] },
-  ];
+  }, [showForm]);
 
   const filteredItems = useMemo(() => {
     const term = searchTerm.trim().toLowerCase();
@@ -67,9 +51,9 @@ const MaterialRequestView: React.FC<{ user: User }> = ({ user }) => {
     
     return catalogItems.filter(item => 
       item.name.toLowerCase().includes(term) || 
-      item.aliases.some(alias => alias.toLowerCase().includes(term))
+      item.aliases?.some(alias => alias.toLowerCase().includes(term))
     );
-  }, [searchTerm]);
+  }, [searchTerm, catalogItems]);
 
   const visibleRequests = useMemo(() => {
     const query = tableSearchQuery.trim().toLowerCase();
@@ -92,9 +76,7 @@ const MaterialRequestView: React.FC<{ user: User }> = ({ user }) => {
       alert("يرجى إضافة أصناف للطلب أولاً");
       return;
     }
-    
     const project = myProjects.find(p => p.id === selectedProjectIdForNewReq);
-    
     const newReq: MaterialRequest = {
       id: `MR-${Date.now().toString().slice(-4)}`,
       projectId: selectedProjectIdForNewReq,
@@ -113,7 +95,6 @@ const MaterialRequestView: React.FC<{ user: User }> = ({ user }) => {
     };
 
     await dbService.createMaterialRequest(newReq);
-    
     alert("تم إنشاء الطلب بنجاح وإرساله للتعميد الفني.");
     setShowForm(false);
     setRequestItems([]);
@@ -122,9 +103,7 @@ const MaterialRequestView: React.FC<{ user: User }> = ({ user }) => {
   const handleTechnicalApprove = async (reqId: string) => {
     if(confirm("هل أنت متأكد من اعتماد المواصفات الفنية لهذا الطلب؟ سيظهر بعدها في قسم المشتريات.")) {
       await dbService.updateMaterialRequestStatus(reqId, RequestStatus.APPROVED_TECHNICAL);
-      // Refresh Data
-      const reqs = await dbService.getAllMaterialRequests();
-      setRequests(reqs);
+      setRequests(await dbService.getAllMaterialRequests());
     }
   };
 
@@ -150,7 +129,7 @@ const MaterialRequestView: React.FC<{ user: User }> = ({ user }) => {
       </div>
 
       <div className="bg-white rounded-3xl shadow-sm border border-slate-100 overflow-hidden min-h-[400px]">
-        {/* Mobile: Stacked inputs. Desktop: Row */}
+        {/* Filter Inputs */}
         <div className="p-4 border-b border-slate-100 bg-slate-50/30 flex flex-col md:flex-row gap-4">
           <div className="relative flex-1">
             <Search className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
@@ -172,10 +151,10 @@ const MaterialRequestView: React.FC<{ user: User }> = ({ user }) => {
                 {myProjects.map(prj => <option key={prj.id} value={prj.id}>{prj.name}</option>)}
               </select>
               <Building2 className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
-              <ChevronDown className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={14} />
           </div>
         </div>
 
+        {/* Requests Table */}
         <div className="overflow-x-auto">
           <table className="w-full text-right min-w-[700px]">
             <thead className="bg-slate-50/50 text-slate-500 text-[11px] font-black uppercase tracking-widest border-b border-slate-100">
@@ -202,7 +181,6 @@ const MaterialRequestView: React.FC<{ user: User }> = ({ user }) => {
                     </span>
                   </td>
                   <td className="px-6 py-4 text-center flex items-center justify-center gap-2">
-                    {/* زر التعميد الفني للاختبار وتسهيل التدفق */}
                     {req.status === RequestStatus.PENDING_TECHNICAL && canApproveTechnical && (
                       <button onClick={() => handleTechnicalApprove(req.id)} className="p-2 bg-emerald-50 text-emerald-600 rounded-lg hover:bg-emerald-600 hover:text-white transition-all" title="اعتماد فني">
                         <CheckCircle2 size={16} />
@@ -212,33 +190,24 @@ const MaterialRequestView: React.FC<{ user: User }> = ({ user }) => {
                   </td>
                 </tr>
               ))}
-              {currentRequests.length === 0 && (
-                <tr>
-                   <td colSpan={5} className="p-8 text-center text-slate-400 font-bold">لا توجد طلبات مطابقة</td>
-                </tr>
-              )}
+              {currentRequests.length === 0 && <tr><td colSpan={5} className="p-8 text-center text-slate-400 font-bold">لا توجد طلبات مطابقة</td></tr>}
             </tbody>
           </table>
         </div>
       </div>
 
+      {/* New Request Modal */}
       {showForm && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
           <div className="bg-white rounded-3xl w-full max-w-2xl max-h-[90vh] overflow-hidden shadow-2xl flex flex-col animate-scaleUp">
             <div className="p-6 border-b bg-slate-50/50 flex justify-between items-center">
               <h3 className="text-xl font-black text-slate-800">إنشاء طلب مواد جديد</h3>
-              <button onClick={() => setShowForm(false)} className="p-2 hover:bg-slate-100 rounded-full transition-colors text-slate-400">
-                <Plus className="rotate-45" size={24} />
-              </button>
+              <button onClick={() => setShowForm(false)} className="p-2 hover:bg-slate-100 rounded-full transition-colors text-slate-400"><Plus className="rotate-45" size={24} /></button>
             </div>
             <div className="p-6 overflow-y-auto flex-1 space-y-6">
               <div className="space-y-2">
                 <label className="text-xs font-black text-slate-400 uppercase tracking-widest ml-1">المشروع المستهدف</label>
-                <select 
-                   value={selectedProjectIdForNewReq}
-                   onChange={(e) => setSelectedProjectIdForNewReq(e.target.value)}
-                   className="w-full p-3.5 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-emerald-500 outline-none font-black text-slate-700"
-                >
+                <select value={selectedProjectIdForNewReq} onChange={(e) => setSelectedProjectIdForNewReq(e.target.value)} className="w-full p-3.5 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-emerald-500 outline-none font-black text-slate-700">
                   {myProjects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                 </select>
               </div>
@@ -247,21 +216,12 @@ const MaterialRequestView: React.FC<{ user: User }> = ({ user }) => {
                 <h4 className="font-black text-slate-800 border-b pb-2">البحث في الكتالوج المعتمد</h4>
                 <div className="relative">
                   <Search className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-                  <input 
-                    type="text" 
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    placeholder="ابحث باسم الصنف أو الاسم البديل..."
-                    className="w-full pr-10 pl-4 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-emerald-500 outline-none font-bold text-sm"
-                  />
+                  <input type="text" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} placeholder="ابحث باسم الصنف أو الاسم البديل..." className="w-full pr-10 pl-4 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-emerald-500 outline-none font-bold text-sm" />
                   {filteredItems.length > 0 && (
                      <div className="absolute top-full right-0 left-0 bg-white border border-slate-200 rounded-2xl mt-2 shadow-2xl z-20 max-h-60 overflow-y-auto">
                         {filteredItems.map(item => (
                           <button key={item.id} onClick={() => addItemToRequest(item)} className="w-full p-4 text-right hover:bg-slate-50 flex justify-between items-center group border-b last:border-0 border-slate-50">
-                             <div className="flex-1">
-                                <p className="font-black text-slate-800">{item.name}</p>
-                                <p className="text-[10px] text-slate-400 font-bold">SKU: {item.sku}</p>
-                             </div>
+                             <div className="flex-1"><p className="font-black text-slate-800">{item.name}</p><p className="text-[10px] text-slate-400 font-bold">SKU: {item.sku}</p></div>
                              <div className="bg-emerald-50 text-emerald-600 p-2 rounded-xl group-hover:bg-emerald-600 group-hover:text-white transition-all"><Plus size={18} /></div>
                           </button>
                         ))}
@@ -274,18 +234,8 @@ const MaterialRequestView: React.FC<{ user: User }> = ({ user }) => {
                  <h4 className="font-black text-slate-800 text-sm">بنود الطلب الحالية:</h4>
                  {requestItems.map((it, idx) => (
                    <div key={idx} className="flex gap-4 items-center bg-white p-4 rounded-2xl border border-slate-200 group">
-                      <div className="flex-1">
-                         <p className="font-black text-slate-800">{it.name}</p>
-                         <p className="text-[10px] text-slate-400 font-bold uppercase">{it.unit}</p>
-                      </div>
-                      <div className="w-24">
-                         <input 
-                            type="number" 
-                            value={it.quantity} 
-                            onChange={(e) => setRequestItems(requestItems.map((r, i) => i === idx ? { ...r, quantity: e.target.value } : r))}
-                            className="w-full p-2 bg-slate-50 border border-slate-200 rounded-xl text-center font-black" 
-                         />
-                      </div>
+                      <div className="flex-1"><p className="font-black text-slate-800">{it.name}</p><p className="text-[10px] text-slate-400 font-bold uppercase">{it.unit}</p></div>
+                      <div className="w-24"><input type="number" value={it.quantity} onChange={(e) => setRequestItems(requestItems.map((r, i) => i === idx ? { ...r, quantity: e.target.value } : r))} className="w-full p-2 bg-slate-50 border border-slate-200 rounded-xl text-center font-black" /></div>
                       <button onClick={() => setRequestItems(requestItems.filter((_, i) => i !== idx))} className="p-2 text-slate-300 hover:text-red-500"><Trash2 size={18}/></button>
                    </div>
                  ))}

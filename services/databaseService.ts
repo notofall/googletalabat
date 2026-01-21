@@ -1,221 +1,191 @@
 
-import { Project, MaterialRequest, Supplier, Item, PurchaseOrder, ProjectBOQ, Receipt, POStatus, RequestStatus, User, UserRole } from '../types';
+import { Project, MaterialRequest, Supplier, Item, PurchaseOrder, ProjectBOQ, Receipt, POStatus, RequestStatus, User } from '../types';
 
 /**
- * System Store (Simulated Database)
- * يحاكي الجداول العلائقية في الذاكرة مع استخدام LocalStorage للمستخدمين.
+ * API Client Layer
+ * يربط الواجهة الأمامية بالخادم الخلفي (Backend)
  */
 
-const STORAGE_KEY_USERS = 'itqan_users_v2_db';
+const API_BASE_URL = '/api'; // في البيئة الحقيقية قد يكون http://localhost:3000/api أو متغير بيئة
 
-// --- 1. Tables Data (Mock for Business Data) ---
-const ITEMS_TABLE: Item[] = [
-  { id: '1', name: 'أسمنت بورتلاندي 50كجم', sku: 'CM-001', unit: 'كيس', categoryId: '1', basePrice: 22, aliases: ['أسمنت عادي'] },
-  { id: '2', name: 'حديد تسليح 12 مم', sku: 'ST-012', unit: 'طن', categoryId: '2', basePrice: 2800, aliases: ['حديد سابك'] },
-  { id: '3', name: 'رمل أحمر مغسول', sku: 'SN-002', unit: 'م3', categoryId: '3', basePrice: 45, aliases: ['رمل ناعم'] },
-];
+// دالة مساعدة لإجراء طلبات الشبكة
+async function apiCall<T>(endpoint: string, method: string = 'GET', body?: any): Promise<T> {
+  const headers: HeadersInit = {
+    'Content-Type': 'application/json',
+    'Accept': 'application/json',
+  };
 
-const PROJECTS_TABLE: Project[] = [
-  { id: '1', name: 'برج التجارة العالمي', code: 'PRJ-001', budget: 2500000, spent: 1250000, status: 'ACTIVE', assignedUserIds: ['1', '2', '5', '6'] },
-  { id: '2', name: 'مجمع واحة العلوم', code: 'PRJ-002', budget: 1800000, spent: 1650000, status: 'ACTIVE', assignedUserIds: ['3', '4', '5'] },
-];
-
-const BOQ_TABLE: ProjectBOQ[] = [
-  { id: 'bq-1', projectId: '1', itemId: '1', itemName: 'أسمنت بورتلاندي 50كجم', unit: 'كيس', totalQuantity: 1000, receivedQuantity: 450 },
-  { id: 'bq-2', projectId: '1', itemId: '2', itemName: 'حديد تسليح 12 مم', unit: 'طن', totalQuantity: 50, receivedQuantity: 20 },
-  { id: 'bq-3', projectId: '2', itemId: '1', itemName: 'أسمنت بورتلاندي 50كجم', unit: 'كيس', totalQuantity: 2000, receivedQuantity: 1900 },
-];
-
-// Shared In-Memory Storage
-const MATERIAL_REQUESTS_TABLE: MaterialRequest[] = [
-  { 
-    id: 'MR-1001', 
-    projectId: '1', 
-    requesterId: '2', 
-    requesterName: 'مهندس الموقع', 
-    projectName: 'برج التجارة العالمي', 
-    status: RequestStatus.PENDING_TECHNICAL, 
-    createdAt: '2024-05-18', 
-    items: [{ id: 'ri-1', itemId: '1', name: 'أسمنت بورتلاندي', unit: 'كيس', quantity: 50 }] 
+  // إرسال معرف المستخدم الحالي للمصادقة البسيطة (يمكن استبداله بـ JWT Token)
+  const userStr = sessionStorage.getItem('proc_user');
+  if (userStr) {
+    const user = JSON.parse(userStr);
+    headers['X-User-ID'] = user.id; 
   }
-];
 
-const PO_TABLE: PurchaseOrder[] = [
-  { 
-    id: 'PO-2024-001', 
-    requestId: 'MR-1001', 
-    projectId: '1', 
-    projectName: 'برج التجارة العالمي',
-    supplierId: '1', 
-    supplierName: 'مصنع الشرق للاسمنت', 
-    status: POStatus.PENDING_APPROVAL, 
-    totalAmount: 45000, 
-    createdAt: '2024-05-20',
-    items: [
-       { id: 'pi-1', itemId: '1', name: 'أسمنت بورتلاندي 50كجم', unit: 'كيس', quantity: 100, price: 22, receivedQuantity: 0 },
-       { id: 'pi-2', itemId: '2', name: 'حديد تسليح 12 مم', unit: 'طن', quantity: 10, price: 2800, receivedQuantity: 0 }
-    ]
+  const config: RequestInit = {
+    method,
+    headers,
+    body: body ? JSON.stringify(body) : undefined,
+  };
+
+  try {
+    const response = await fetch(`${API_BASE_URL}${endpoint}`, config);
+    
+    if (!response.ok) {
+      // محاولة قراءة رسالة الخطأ من الخادم
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.message || `API Error: ${response.status} ${response.statusText}`);
+    }
+
+    // إذا كان الرد فارغاً (مثل 204 No Content)
+    if (response.status === 204) {
+      return {} as T;
+    }
+
+    return await response.json();
+  } catch (error) {
+    console.error(`API Call Failed [${method} ${endpoint}]:`, error);
+    throw error;
   }
-];
-
-const RECEIPTS_TABLE: Receipt[] = [];
-
-// --- Helper Functions for LocalStorage ---
-const getUsersFromStorage = (): User[] => {
-  const stored = localStorage.getItem(STORAGE_KEY_USERS);
-  return stored ? JSON.parse(stored) : [];
-};
-
-const saveUsersToStorage = (users: User[]) => {
-  localStorage.setItem(STORAGE_KEY_USERS, JSON.stringify(users));
-};
-
-// --- 2. Database Services ---
+}
 
 export const dbService = {
-  // --- User Management (First Run Logic) ---
-  
+  // --- المصادقة والمستخدمين ---
+
   isSystemInitialized: async (): Promise<boolean> => {
-    const users = getUsersFromStorage();
-    return users.some(u => u.role === UserRole.ADMIN);
+    return apiCall<boolean>('/system/init-status');
   },
 
   registerSystemAdmin: async (name: string, email: string, password: string): Promise<User> => {
-    const newUser: User = {
-      id: `USR-${Date.now()}`,
-      name,
-      email,
-      role: UserRole.ADMIN,
-      canEditPOPrices: true,
-      approvalLimit: 999999999
-    };
-    
-    const users = getUsersFromStorage();
-    users.push(newUser);
-    saveUsersToStorage(users);
-    return newUser;
-  },
-
-  createUser: async (user: Omit<User, 'id'>): Promise<User> => {
-    const users = getUsersFromStorage();
-    if (users.find(u => u.email === user.email)) {
-      throw new Error('البريد الإلكتروني مسجل مسبقاً');
-    }
-    const newUser = { ...user, id: `USR-${Date.now()}` };
-    users.push(newUser);
-    saveUsersToStorage(users);
-    return newUser;
+    return apiCall<User>('/auth/register-admin', 'POST', { name, email, password });
   },
 
   authenticateUser: async (email: string, password: string): Promise<User | null> => {
-    const users = getUsersFromStorage();
-    const user = users.find(u => u.email.toLowerCase() === email.toLowerCase());
-    return user || null;
+    try {
+      return await apiCall<User>('/auth/login', 'POST', { email, password });
+    } catch (e) {
+      return null;
+    }
   },
 
   getAllUsers: async (): Promise<User[]> => {
-    return getUsersFromStorage();
+    return apiCall<User[]>('/users');
+  },
+
+  createUser: async (user: Omit<User, 'id'>): Promise<User> => {
+    return apiCall<User>('/users', 'POST', user);
   },
 
   updateUserPermissions: async (userId: string, updates: Partial<User>) => {
-    let users = getUsersFromStorage();
-    users = users.map(u => u.id === userId ? { ...u, ...updates } : u);
-    saveUsersToStorage(users);
+    await apiCall(`/users/${userId}/permissions`, 'PATCH', updates);
     return true;
   },
 
-  // --- Business Data & Operations ---
+  // --- البيانات الأساسية (Master Data) ---
 
-  getProjects: async (userId: string) => {
-    return PROJECTS_TABLE; 
+  // المشاريع
+  getProjects: async (userId?: string) => {
+    const query = userId ? `?userId=${userId}` : '';
+    return apiCall<Project[]>(`/projects${query}`);
+  },
+
+  createProject: async (p: Project) => {
+    await apiCall('/projects', 'POST', p);
+    return true;
+  },
+
+  deleteProject: async (id: string) => {
+    await apiCall(`/projects/${id}`, 'DELETE');
+    return true;
+  },
+
+  // الموردين
+  getSuppliers: async () => {
+    return apiCall<Supplier[]>('/suppliers');
+  },
+
+  createSupplier: async (s: Supplier) => {
+    await apiCall('/suppliers', 'POST', s);
+    return true;
+  },
+
+  deleteSupplier: async (id: string) => {
+    await apiCall(`/suppliers/${id}`, 'DELETE');
+    return true;
+  },
+
+  // الكتالوج
+  getCatalogItems: async () => {
+    return apiCall<Item[]>('/items');
+  },
+
+  createCatalogItem: async (i: Item) => {
+    await apiCall('/items', 'POST', i);
+    return true;
+  },
+
+  deleteCatalogItem: async (id: string) => {
+    await apiCall(`/items/${id}`, 'DELETE');
+    return true;
   },
 
   getProjectBOQ: async (projectId: string) => {
-    return BOQ_TABLE.filter(b => b.projectId === projectId);
+    return apiCall<ProjectBOQ[]>(`/projects/${projectId}/boq`);
   },
 
-  // Material Requests
+  // --- العمليات (Transactions) ---
+
+  // طلبات المواد
   getAllMaterialRequests: async () => {
-    return MATERIAL_REQUESTS_TABLE;
+    return apiCall<MaterialRequest[]>('/material-requests');
   },
 
   createMaterialRequest: async (req: MaterialRequest) => {
-    MATERIAL_REQUESTS_TABLE.push(req);
+    await apiCall('/material-requests', 'POST', req);
     return true;
   },
 
   updateMaterialRequestStatus: async (id: string, status: RequestStatus) => {
-    const req = MATERIAL_REQUESTS_TABLE.find(r => r.id === id);
-    if (req) {
-      req.status = status;
-      return true;
-    }
-    return false;
+    await apiCall(`/material-requests/${id}/status`, 'PATCH', { status });
+    return true;
   },
 
-  // Purchase Orders
-  getPendingPOs: async () => {
-    return PO_TABLE.filter(po => po.status !== POStatus.RECEIVED && po.status !== POStatus.CANCELLED);
-  },
-  
+  // أوامر الشراء
   getAllPOs: async () => {
-    return PO_TABLE;
+    return apiCall<PurchaseOrder[]>('/purchase-orders');
+  },
+
+  getPendingPOs: async () => {
+    // يمكن تصفية البيانات في الخادم عبر Query Params
+    return apiCall<PurchaseOrder[]>('/purchase-orders?status=PENDING_APPROVAL');
   },
 
   getPOById: async (id: string) => {
-    return PO_TABLE.find(p => p.id === id);
+    return apiCall<PurchaseOrder>(`/purchase-orders/${id}`);
   },
 
   createPurchaseOrder: async (po: PurchaseOrder) => {
-    PO_TABLE.push(po);
-    // Update linked Request Status
-    const req = MATERIAL_REQUESTS_TABLE.find(r => r.id === po.requestId);
-    if (req) req.status = RequestStatus.IN_PROCUREMENT;
+    await apiCall('/purchase-orders', 'POST', po);
     return true;
   },
 
   updatePO: async (po: PurchaseOrder) => {
-    const index = PO_TABLE.findIndex(p => p.id === po.id);
-    if (index !== -1) {
-      PO_TABLE[index] = po;
-      return true;
-    }
-    return false;
+    await apiCall(`/purchase-orders/${po.id}`, 'PUT', po);
+    return true;
   },
 
   approvePO: async (poId: string, approverId: string) => {
-    const po = PO_TABLE.find(p => p.id === poId);
-    if (po) {
-      po.status = POStatus.APPROVED;
-      console.log(`[DB] PO ${poId} Approved by ${approverId}`);
-      return true;
-    }
-    return false;
-  },
-
-  createReceipt: async (receiptData: Receipt) => {
-    RECEIPTS_TABLE.push(receiptData);
-    const po = PO_TABLE.find(p => p.id === receiptData.poId);
-    let allItemsFullyReceived = true;
-
-    if (po) {
-      receiptData.items.forEach(recItem => {
-        const poItem = po.items.find(pi => pi.itemId === recItem.itemId);
-        if (poItem) {
-          poItem.receivedQuantity += recItem.quantity;
-          if (poItem.receivedQuantity < poItem.quantity) allItemsFullyReceived = false;
-        }
-        const boqItem = BOQ_TABLE.find(b => b.projectId === po.projectId && b.itemId === recItem.itemId);
-        if (boqItem) {
-          boqItem.receivedQuantity += recItem.quantity;
-        }
-      });
-      po.status = allItemsFullyReceived ? POStatus.RECEIVED : POStatus.PARTIALLY_RECEIVED;
-    }
+    await apiCall(`/purchase-orders/${poId}/approve`, 'POST', { approverId });
     return true;
   },
-  
+
+  // الاستلام والمخزون
+  createReceipt: async (receiptData: Receipt) => {
+    await apiCall('/receipts', 'POST', receiptData);
+    return true;
+  },
+
   getReceiptsHistory: async () => {
-    return RECEIPTS_TABLE;
+    return apiCall<Receipt[]>('/receipts');
   }
 };

@@ -1,27 +1,10 @@
 
 import React, { useState, useEffect } from 'react';
 import { 
-  ArrowRightLeft, 
-  Trophy, 
-  FileSearch, 
-  FileText,
-  ArrowRight,
-  Plus,
-  CheckCircle2,
-  X,
-  Truck,
-  CalendarDays,
-  Table as TableIcon,
-  TrendingDown,
-  Zap,
-  ShoppingCart,
-  DollarSign,
-  Edit,
-  ShieldAlert,
-  Save
+  ArrowRightLeft, Trophy, FileSearch, FileText, ArrowRight, Plus, CheckCircle2,
+  X, Truck, CalendarDays, Table as TableIcon, TrendingDown, Zap, ShoppingCart, DollarSign, Edit, ShieldAlert, Save
 } from 'lucide-react';
 import { User, POStatus, UserRole, Supplier, MaterialRequest, RequestStatus } from '../types';
-import { DEFAULT_PROCUREMENT_LIMIT } from '../constants';
 import { dbService } from '../services/databaseService';
 
 const ProcurementView: React.FC<{ user: User }> = ({ user }) => {
@@ -34,6 +17,7 @@ const ProcurementView: React.FC<{ user: User }> = ({ user }) => {
   // Real Data
   const [approvedRequests, setApprovedRequests] = useState<MaterialRequest[]>([]);
   const [realPOs, setRealPOs] = useState<any[]>([]);
+  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
 
   const [selectedRequest, setSelectedRequest] = useState<any>(null);
   const [selectedPO, setSelectedPO] = useState<any>(null);
@@ -42,21 +26,12 @@ const ProcurementView: React.FC<{ user: User }> = ({ user }) => {
   useEffect(() => {
     const loadData = async () => {
        const reqs = await dbService.getAllMaterialRequests();
-       // Filter only Approved Technical Requests
        setApprovedRequests(reqs.filter(r => r.status === RequestStatus.APPROVED_TECHNICAL));
-       
-       const pos = await dbService.getAllPOs();
-       setRealPOs(pos);
+       setRealPOs(await dbService.getAllPOs());
+       setSuppliers(await dbService.getSuppliers());
     };
     loadData();
   }, [activeSubTab, showDirectPOModal, showEditPOModal]);
-
-  const suppliers: Supplier[] = [
-    { id: '1', name: 'مصنع الشرق للاسمنت', contact: 'خالد بن محمد', email: 'sales@east-cement.sa', rating: 4.5 },
-    { id: '2', name: 'حديد اليمامة', contact: 'صالح الغامدي', email: 'orders@yamama-steel.com', rating: 4.8 },
-    { id: '3', name: 'الخريف للكهرباء', contact: 'عبدالله الخريف', email: 'supply@alkhorayef.sa', rating: 4.2 },
-    { id: '4', name: 'نوريد للتجارة', contact: 'محمد نور', email: 'info@norid.sa', rating: 3.9 },
-  ];
 
   const [allQuotes, setAllQuotes] = useState<Record<string, any[]>>({});
   const [quoteItemPrices, setQuoteItemPrices] = useState<Record<string, number>>({});
@@ -73,7 +48,7 @@ const ProcurementView: React.FC<{ user: User }> = ({ user }) => {
     if (!quoteSupplierId) return;
     const supplier = suppliers.find(s => s.id === quoteSupplierId);
     
-    // Transform request items to PO items (mapping prices)
+    // Transform request items to PO items
     const items = selectedRequest.items.map((it: any) => ({
       id: `pi-${Date.now()}-${it.itemId}`,
       itemId: it.itemId,
@@ -85,7 +60,6 @@ const ProcurementView: React.FC<{ user: User }> = ({ user }) => {
     }));
 
     const total = items.reduce((sum: number, it: any) => sum + (it.price * it.quantity), 0);
-
     const newPO = {
       id: `PO-${Date.now().toString().slice(-4)}`,
       requestId: selectedRequest.id,
@@ -100,7 +74,6 @@ const ProcurementView: React.FC<{ user: User }> = ({ user }) => {
     };
 
     await dbService.createPurchaseOrder(newPO);
-    
     setShowDirectPOModal(false);
     setActiveSubTab('pos');
     alert(`تم إصدار أمر الشراء رقم ${newPO.id} وتحويله للتعميد.`);
@@ -109,27 +82,16 @@ const ProcurementView: React.FC<{ user: User }> = ({ user }) => {
   const handleEditPOClick = (po: any) => {
     setSelectedPO(po);
     const initialPrices: Record<string, number> = {};
-    po.items.forEach((it: any) => {
-      initialPrices[it.itemId] = it.price;
-    });
+    po.items.forEach((it: any) => initialPrices[it.itemId] = it.price);
     setQuoteItemPrices(initialPrices);
     setShowEditPOModal(true);
   };
 
   const handleUpdatePOPrices = async (e: React.FormEvent) => {
     e.preventDefault();
-    const updatedItems = selectedPO.items.map((it: any) => ({
-      ...it,
-      price: quoteItemPrices[it.itemId] || 0
-    }));
+    const updatedItems = selectedPO.items.map((it: any) => ({ ...it, price: quoteItemPrices[it.itemId] || 0 }));
     const newTotal = updatedItems.reduce((sum: number, it: any) => sum + (it.price * it.quantity), 0);
-    
-    await dbService.updatePO({
-        ...selectedPO,
-        items: updatedItems,
-        totalAmount: newTotal
-    });
-
+    await dbService.updatePO({ ...selectedPO, items: updatedItems, totalAmount: newTotal });
     setShowEditPOModal(false);
     alert("تم تحديث أسعار أمر الشراء وإجمالي القيمة بنجاح.");
   };
@@ -138,10 +100,7 @@ const ProcurementView: React.FC<{ user: User }> = ({ user }) => {
     e.preventDefault();
     if (!quoteSupplierId) return;
     const supplier = suppliers.find(s => s.id === quoteSupplierId);
-    const itemsData = selectedRequest.items.map((it: any) => ({
-      itemId: it.itemId,
-      price: quoteItemPrices[it.itemId] || 0
-    }));
+    const itemsData = selectedRequest.items.map((it: any) => ({ itemId: it.itemId, price: quoteItemPrices[it.itemId] || 0 }));
     const total = itemsData.reduce((sum: number, it: any) => {
       const originalItem = selectedRequest.items.find((orig: any) => orig.itemId === it.itemId);
       return sum + (it.price * (originalItem?.quantity || 0));
@@ -157,10 +116,7 @@ const ProcurementView: React.FC<{ user: User }> = ({ user }) => {
       totalAmount: total
     };
 
-    setAllQuotes(prev => ({
-      ...prev,
-      [selectedRequest.id]: [...(prev[selectedRequest.id] || []), quoteEntry]
-    }));
+    setAllQuotes(prev => ({ ...prev, [selectedRequest.id]: [...(prev[selectedRequest.id] || []), quoteEntry] }));
     setShowAddQuoteModal(false);
     setQuoteSupplierId('');
     setQuoteItemPrices({});
@@ -168,7 +124,6 @@ const ProcurementView: React.FC<{ user: User }> = ({ user }) => {
   };
 
   const handleSelectWinner = async (quote: any) => {
-     // Create PO from Winner Quote
      const items = selectedRequest.items.map((it: any) => {
         const quotePrice = quote.items.find((qi: any) => qi.itemId === it.itemId)?.price || 0;
         return {
@@ -196,7 +151,6 @@ const ProcurementView: React.FC<{ user: User }> = ({ user }) => {
      };
     
     await dbService.createPurchaseOrder(newPO);
-    
     alert("تمت الترسية وإصدار أمر الشراء بنجاح.");
     setActiveSubTab('pos');
     setShowComparison(false);
@@ -207,9 +161,7 @@ const ProcurementView: React.FC<{ user: User }> = ({ user }) => {
   if (showComparison) {
     return (
       <div className="space-y-6 animate-fadeIn">
-        <button onClick={() => setShowComparison(false)} className="flex items-center gap-2 text-slate-500 hover:text-emerald-600 font-bold transition-all">
-          <ArrowRight size={20} /> العودة للعروض
-        </button>
+        <button onClick={() => setShowComparison(false)} className="flex items-center gap-2 text-slate-500 hover:text-emerald-600 font-bold transition-all"><ArrowRight size={20} /> العودة للعروض</button>
         <div className="bg-white rounded-3xl shadow-sm border border-slate-100 overflow-hidden">
           <div className="p-8 border-b border-slate-50 flex justify-between items-center bg-slate-50/30">
             <h2 className="text-2xl font-black text-slate-800 flex items-center gap-3"><TableIcon className="text-emerald-600" />مقارنة وترسية العروض</h2>
@@ -233,27 +185,19 @@ const ProcurementView: React.FC<{ user: User }> = ({ user }) => {
                     <td className="p-6 border-l font-bold text-slate-700">{item.name} ({item.quantity} {item.unit})</td>
                     {currentQuotes.map(q => {
                       const itemQuote = q.items.find((i: any) => i.itemId === item.itemId);
-                      return (
-                        <td key={q.id} className="p-6 text-center font-black text-slate-800">
-                          {itemQuote?.price.toLocaleString()} <span className="text-[10px] text-slate-400 font-normal">ر.س</span>
-                        </td>
-                      );
+                      return ( <td key={q.id} className="p-6 text-center font-black text-slate-800">{itemQuote?.price.toLocaleString()} <span className="text-[10px] text-slate-400 font-normal">ر.س</span></td> );
                     })}
                   </tr>
                 ))}
                 <tr className="bg-slate-50/80 font-black">
                   <td className="p-6 border-l">إجمالي العرض</td>
-                  {currentQuotes.map(q => (
-                    <td key={q.id} className="p-6 text-center text-emerald-600 text-xl">{q.totalAmount.toLocaleString()} <span className="text-xs">ر.س</span></td>
-                  ))}
+                  {currentQuotes.map(q => (<td key={q.id} className="p-6 text-center text-emerald-600 text-xl">{q.totalAmount.toLocaleString()} <span className="text-xs">ر.س</span></td>))}
                 </tr>
                 <tr className="bg-slate-50/30">
                   <td className="p-6 border-l"></td>
                   {currentQuotes.map(q => (
                     <td key={q.id} className="p-6 text-center">
-                      <button onClick={() => handleSelectWinner(q)} className="px-6 py-2 bg-slate-900 text-white rounded-xl font-black text-xs hover:bg-emerald-600 transition-all flex items-center justify-center gap-2 mx-auto">
-                        <Trophy size={14} /> ترسية العرض
-                      </button>
+                      <button onClick={() => handleSelectWinner(q)} className="px-6 py-2 bg-slate-900 text-white rounded-xl font-black text-xs hover:bg-emerald-600 transition-all flex items-center justify-center gap-2 mx-auto"><Trophy size={14} /> ترسية العرض</button>
                     </td>
                   ))}
                 </tr>
@@ -275,18 +219,8 @@ const ProcurementView: React.FC<{ user: User }> = ({ user }) => {
       </div>
 
       <div className="flex gap-2 p-1.5 bg-slate-100 rounded-2xl w-full md:w-fit overflow-x-auto no-scrollbar">
-        {[
-          { id: 'approved_requests', label: `الطلبات المعتمدة (${approvedRequests.length})` },
-          { id: 'active_rfqs', label: 'عروض الأسعار' },
-          { id: 'pos', label: `أوامر الشراء (${realPOs.length})` }
-        ].map(tab => (
-          <button 
-            key={tab.id}
-            onClick={() => setActiveSubTab(tab.id as any)}
-            className={`px-4 md:px-8 py-2.5 rounded-xl font-black transition-all text-sm whitespace-nowrap ${activeSubTab === tab.id ? 'bg-white shadow text-emerald-600' : 'text-slate-500 hover:text-slate-700'}`}
-          >
-            {tab.label}
-          </button>
+        {[{ id: 'approved_requests', label: `الطلبات المعتمدة (${approvedRequests.length})` }, { id: 'active_rfqs', label: 'عروض الأسعار' }, { id: 'pos', label: `أوامر الشراء (${realPOs.length})` }].map(tab => (
+          <button key={tab.id} onClick={() => setActiveSubTab(tab.id as any)} className={`px-4 md:px-8 py-2.5 rounded-xl font-black transition-all text-sm whitespace-nowrap ${activeSubTab === tab.id ? 'bg-white shadow text-emerald-600' : 'text-slate-500 hover:text-slate-700'}`}>{tab.label}</button>
         ))}
       </div>
 
@@ -301,12 +235,8 @@ const ProcurementView: React.FC<{ user: User }> = ({ user }) => {
                 <p className="text-xs text-slate-400 font-bold">{req.items.length} أصناف مطلوبة</p>
               </div>
               <div className="flex flex-col sm:flex-row gap-2">
-                 <button onClick={() => { setSelectedRequest(req); setShowDirectPOModal(true); }} className="px-6 py-4 bg-emerald-600 text-white rounded-2xl font-black text-xs flex items-center justify-center gap-2 hover:bg-emerald-700 transition-all shadow-lg shadow-emerald-50">
-                    <Zap size={18} /> تعميد مباشر (PO)
-                 </button>
-                 <button onClick={() => handleCreateRFQ(req)} className="px-6 py-4 bg-white border border-slate-200 text-slate-600 rounded-2xl font-black text-xs flex items-center justify-center gap-2 hover:bg-slate-50 transition-all">
-                    <ArrowRightLeft size={18} /> طلب عروض
-                 </button>
+                 <button onClick={() => { setSelectedRequest(req); setShowDirectPOModal(true); }} className="px-6 py-4 bg-emerald-600 text-white rounded-2xl font-black text-xs flex items-center justify-center gap-2 hover:bg-emerald-700 transition-all shadow-lg shadow-emerald-50"><Zap size={18} /> تعميد مباشر (PO)</button>
+                 <button onClick={() => handleCreateRFQ(req)} className="px-6 py-4 bg-white border border-slate-200 text-slate-600 rounded-2xl font-black text-xs flex items-center justify-center gap-2 hover:bg-slate-50 transition-all"><ArrowRightLeft size={18} /> طلب عروض</button>
               </div>
             </div>
           ))}
@@ -325,16 +255,8 @@ const ProcurementView: React.FC<{ user: User }> = ({ user }) => {
               <h3 className="text-xl font-black text-slate-800 mb-1">{req.id}</h3>
               <p className="text-sm font-bold text-slate-500 mb-6">{req.projectName}</p>
               <div className="grid grid-cols-2 gap-2">
-                 <button onClick={() => { setSelectedRequest(req); setShowAddQuoteModal(true); }} className="py-3 bg-white border border-slate-200 text-slate-600 rounded-xl font-black text-xs flex items-center justify-center gap-2 hover:bg-slate-50 transition-all">
-                    <Plus size={16} /> إضافة عرض
-                 </button>
-                 <button 
-                    disabled={!allQuotes[req.id]?.length}
-                    onClick={() => { setSelectedRequest(req); setShowComparison(true); }} 
-                    className={`py-3 rounded-xl font-black text-xs flex items-center justify-center gap-2 transition-all shadow-lg ${!allQuotes[req.id]?.length ? 'bg-slate-100 text-slate-400' : 'bg-slate-900 text-white hover:bg-slate-800 shadow-slate-200'}`}
-                 >
-                    <FileSearch size={16} /> مقارنة وترسية
-                 </button>
+                 <button onClick={() => { setSelectedRequest(req); setShowAddQuoteModal(true); }} className="py-3 bg-white border border-slate-200 text-slate-600 rounded-xl font-black text-xs flex items-center justify-center gap-2 hover:bg-slate-50 transition-all"><Plus size={16} /> إضافة عرض</button>
+                 <button disabled={!allQuotes[req.id]?.length} onClick={() => { setSelectedRequest(req); setShowComparison(true); }} className={`py-3 rounded-xl font-black text-xs flex items-center justify-center gap-2 transition-all shadow-lg ${!allQuotes[req.id]?.length ? 'bg-slate-100 text-slate-400' : 'bg-slate-900 text-white hover:bg-slate-800 shadow-slate-200'}`}><FileSearch size={16} /> مقارنة وترسية</button>
               </div>
             </div>
           ))}
@@ -351,23 +273,9 @@ const ProcurementView: React.FC<{ user: User }> = ({ user }) => {
                  </div>
                  <h4 className="text-lg font-black text-slate-800 mb-1">{po.supplierName}</h4>
                  <p className="text-xs font-bold text-slate-500 mb-4">{po.projectName}</p>
-                 <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100 mb-6">
-                    <p className="text-[10px] text-slate-400 font-black uppercase mb-1">القيمة الإجمالية</p>
-                    <p className="text-xl font-black text-slate-800">{po.totalAmount.toLocaleString()} ر.س</p>
-                 </div>
-                 {user.canEditPOPrices && po.status === POStatus.PENDING_APPROVAL && (
-                    <button 
-                      onClick={() => handleEditPOClick(po)}
-                      className="w-full py-3 bg-white border border-slate-200 text-emerald-600 rounded-2xl font-black text-xs flex items-center justify-center gap-2 hover:bg-emerald-50 transition-all"
-                    >
-                       <Edit size={16} /> تعديل أسعار البنود
-                    </button>
-                 )}
-                 {!user.canEditPOPrices && (
-                   <div className="flex items-center gap-2 justify-center text-[10px] text-slate-400 font-black uppercase">
-                      <ShieldAlert size={14} /> التعديل مغلق من قبل المدير العام
-                   </div>
-                 )}
+                 <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100 mb-6"><p className="text-[10px] text-slate-400 font-black uppercase mb-1">القيمة الإجمالية</p><p className="text-xl font-black text-slate-800">{po.totalAmount.toLocaleString()} ر.س</p></div>
+                 {user.canEditPOPrices && po.status === POStatus.PENDING_APPROVAL && (<button onClick={() => handleEditPOClick(po)} className="w-full py-3 bg-white border border-slate-200 text-emerald-600 rounded-2xl font-black text-xs flex items-center justify-center gap-2 hover:bg-emerald-50 transition-all"><Edit size={16} /> تعديل أسعار البنود</button>)}
+                 {!user.canEditPOPrices && (<div className="flex items-center gap-2 justify-center text-[10px] text-slate-400 font-black uppercase"><ShieldAlert size={14} /> التعديل مغلق من قبل المدير العام</div>)}
               </div>
             ))}
             {realPOs.length === 0 && <p className="col-span-3 text-center text-slate-400 font-bold py-10">لا توجد أوامر شراء مصدرة.</p>}
@@ -379,9 +287,7 @@ const ProcurementView: React.FC<{ user: User }> = ({ user }) => {
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
           <div className="bg-white rounded-[40px] w-full max-w-2xl shadow-2xl overflow-hidden animate-scaleUp flex flex-col max-h-[90vh]">
             <div className="p-6 md:p-8 border-b bg-slate-50/50 flex justify-between items-center">
-               <h3 className="text-lg md:text-2xl font-black text-slate-800">
-                  {showEditPOModal ? `تعديل أسعار ${selectedPO?.id}` : (showDirectPOModal ? 'إصدار أمر شراء' : 'تفريغ عرض السعر')}
-               </h3>
+               <h3 className="text-lg md:text-2xl font-black text-slate-800">{showEditPOModal ? `تعديل أسعار ${selectedPO?.id}` : (showDirectPOModal ? 'إصدار أمر شراء' : 'تفريغ عرض السعر')}</h3>
                <button onClick={() => { setShowDirectPOModal(false); setShowAddQuoteModal(false); setShowEditPOModal(false); }} className="p-2 hover:bg-slate-200 rounded-full transition-all text-slate-400"><X size={24} /></button>
             </div>
             <form onSubmit={showEditPOModal ? handleUpdatePOPrices : (showDirectPOModal ? handleDirectPO : handleAddQuote)} className="p-6 md:p-8 overflow-y-auto space-y-6">
@@ -400,48 +306,19 @@ const ProcurementView: React.FC<{ user: User }> = ({ user }) => {
                     </div>
                  </div>
                )}
-
-               {showEditPOModal && (
-                  <div className="bg-emerald-50 p-4 rounded-2xl border border-emerald-100 mb-4 flex items-center gap-4">
-                     <ShieldAlert className="text-emerald-600 shrink-0" size={24} />
-                     <p className="text-sm font-black text-emerald-900 leading-relaxed">أنت تقوم الآن بتحديث الأسعار الحالية لأمر الشراء. سيتم إعادة حساب إجمالي الفاتورة تلقائياً عند الحفظ.</p>
-                  </div>
-               )}
-
+               {showEditPOModal && (<div className="bg-emerald-50 p-4 rounded-2xl border border-emerald-100 mb-4 flex items-center gap-4"><ShieldAlert className="text-emerald-600 shrink-0" size={24} /><p className="text-sm font-black text-emerald-900 leading-relaxed">أنت تقوم الآن بتحديث الأسعار الحالية لأمر الشراء. سيتم إعادة حساب إجمالي الفاتورة تلقائياً عند الحفظ.</p></div>)}
                <div className="space-y-4">
                   <h4 className="font-black text-slate-800 flex items-center gap-2"><DollarSign className="text-emerald-500" size={18} /> تسعير البنود</h4>
                   {(showEditPOModal ? selectedPO?.items : selectedRequest?.items)?.map((item: any) => (
                     <div key={item.itemId || item.id} className="p-4 md:p-6 bg-slate-50 rounded-2xl border border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:border-emerald-200 transition-all">
-                       <div className="flex-1">
-                          <p className="font-black text-slate-800">{item.name}</p>
-                          <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">{item.quantity} {item.unit}</p>
-                       </div>
-                       <div className="w-full sm:w-40 relative">
-                          <input 
-                            required 
-                            type="number" 
-                            step="0.01" 
-                            value={quoteItemPrices[item.itemId] || ''} 
-                            onChange={(e) => setQuoteItemPrices({ ...quoteItemPrices, [item.itemId]: Number(e.target.value) })} 
-                            placeholder="0.00" 
-                            className="w-full p-3 bg-white border border-slate-200 rounded-xl text-center font-black focus:ring-2 focus:ring-emerald-500 outline-none" 
-                          />
-                          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[10px] text-slate-300 font-bold">ر.س</span>
-                       </div>
+                       <div className="flex-1"><p className="font-black text-slate-800">{item.name}</p><p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">{item.quantity} {item.unit}</p></div>
+                       <div className="w-full sm:w-40 relative"><input required type="number" step="0.01" value={quoteItemPrices[item.itemId] || ''} onChange={(e) => setQuoteItemPrices({ ...quoteItemPrices, [item.itemId]: Number(e.target.value) })} placeholder="0.00" className="w-full p-3 bg-white border border-slate-200 rounded-xl text-center font-black focus:ring-2 focus:ring-emerald-500 outline-none" /><span className="absolute left-3 top-1/2 -translate-y-1/2 text-[10px] text-slate-300 font-bold">ر.س</span></div>
                     </div>
                   ))}
                </div>
-
                <div className="pt-6 border-t border-slate-100 flex flex-col sm:flex-row justify-between items-center gap-4">
-                  <div className="text-center sm:text-right">
-                    <p className="text-[10px] text-slate-400 font-black uppercase">الإجمالي النهائي</p>
-                    <p className="text-2xl font-black text-emerald-600">
-                      {(showEditPOModal ? selectedPO?.items : selectedRequest?.items)?.reduce((sum: number, it: any) => sum + ((quoteItemPrices[it.itemId] || 0) * it.quantity), 0).toLocaleString()} ر.س
-                    </p>
-                  </div>
-                  <button type="submit" className={`w-full sm:w-auto px-12 py-4 text-white rounded-3xl font-black text-lg transition-all shadow-2xl flex items-center justify-center gap-3 ${showEditPOModal ? 'bg-emerald-600 hover:bg-emerald-700' : (showDirectPOModal ? 'bg-slate-900 hover:bg-slate-800' : 'bg-emerald-600 hover:bg-emerald-700')}`}>
-                    {showEditPOModal ? <><Save size={20}/> حفظ التغييرات</> : (showDirectPOModal ? 'إصدار أمر الشراء' : 'إدراج في المقارنة')}
-                  </button>
+                  <div className="text-center sm:text-right"><p className="text-[10px] text-slate-400 font-black uppercase">الإجمالي النهائي</p><p className="text-2xl font-black text-emerald-600">{(showEditPOModal ? selectedPO?.items : selectedRequest?.items)?.reduce((sum: number, it: any) => sum + ((quoteItemPrices[it.itemId] || 0) * it.quantity), 0).toLocaleString()} ر.س</p></div>
+                  <button type="submit" className={`w-full sm:w-auto px-12 py-4 text-white rounded-3xl font-black text-lg transition-all shadow-2xl flex items-center justify-center gap-3 ${showEditPOModal ? 'bg-emerald-600 hover:bg-emerald-700' : (showDirectPOModal ? 'bg-slate-900 hover:bg-slate-800' : 'bg-emerald-600 hover:bg-emerald-700')}`}>{showEditPOModal ? <><Save size={20}/> حفظ التغييرات</> : (showDirectPOModal ? 'إصدار أمر الشراء' : 'إدراج في المقارنة')}</button>
                </div>
             </form>
           </div>
