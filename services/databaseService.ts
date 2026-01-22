@@ -71,6 +71,14 @@ export const dbService = {
   createRFQ: async (rfq: any) => handleResponse(await fetch(`${API_URL}/rfqs`, { method: 'POST', headers: getHeaders(), body: JSON.stringify(rfq) })),
   getQuotations: async () => handleResponse(await fetch(`${API_URL}/quotations`, { headers: getHeaders() })),
   createQuotation: async (q: any) => handleResponse(await fetch(`${API_URL}/quotations`, { method: 'POST', headers: getHeaders(), body: JSON.stringify(q) })),
+  
+  selectWinningQuotation: async (rfqId: string, quotationId: string) => {
+    return handleResponse(await fetch(`${API_URL}/rfqs/${rfqId}/select-winner`, {
+        method: 'POST',
+        headers: getHeaders(),
+        body: JSON.stringify({ quotationId })
+    }));
+  },
 
   // POs
   getAllPOs: async (): Promise<PurchaseOrder[]> => handleResponse(await fetch(`${API_URL}/purchase-orders`, { headers: getHeaders() })),

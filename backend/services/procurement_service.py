@@ -68,6 +68,55 @@ class ProcurementService:
         return db_quote
 
     @staticmethod
+    def select_winning_quotation(db: Session, rfq_id: str, quotation_id: str):
+        # 1. Validation
+        rfq = db.query(models.RFQ).filter(models.RFQ.id == rfq_id).first()
+        if not rfq: raise HTTPException(status_code=404, detail="RFQ not found")
+        
+        quote = db.query(models.Quotation).filter(models.Quotation.id == quotation_id, models.Quotation.rfq_id == rfq_id).first()
+        if not quote: raise HTTPException(status_code=404, detail="Quotation not found for this RFQ")
+        
+        if rfq.status != "OPEN": raise HTTPException(status_code=400, detail="RFQ is not OPEN")
+
+        # 2. Update Statuses
+        quote.is_selected = True
+        rfq.status = "CLOSED"
+        
+        # 3. Generate PO automatically from Context
+        # Fetch PR items to know what was ordered
+        pr = db.query(models.MaterialRequest).filter(models.MaterialRequest.id == rfq.material_request_id).first()
+        if not pr: raise HTTPException(status_code=500, detail="Original PR missing")
+
+        db_po = models.PurchaseOrder(
+            project_id=pr.project_id,
+            supplier_id=quote.supplier_id,
+            material_request_id=pr.id,
+            quotation_id=quote.id,
+            status="PENDING_APPROVAL",
+            total_amount=quote.total_amount
+        )
+        db.add(db_po)
+        db.flush()
+
+        # Distribute Cost (Simple allocation for Lump Sum quotes)
+        # In a real system with line-item quotes, we would map specific prices.
+        item_count = len(pr.items)
+        avg_price = quote.total_amount / item_count if item_count > 0 else 0
+
+        for req_item in pr.items:
+            db.add(models.POItem(
+                po_id=db_po.id,
+                item_id=req_item.item_id,
+                quantity=req_item.quantity,
+                price=avg_price, # Allocated price
+                received_quantity=0.0
+            ))
+
+        db.commit()
+        db.refresh(db_po)
+        return db_po
+
+    @staticmethod
     def create_po(db: Session, po_data: schemas.POCreate, user_id: str):
         total = sum(item.quantity * item.price for item in po_data.items)
 

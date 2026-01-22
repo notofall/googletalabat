@@ -62,28 +62,12 @@ const QuotationsView: React.FC<{ user: User }> = ({ user }) => {
   };
 
   const handleAward = async (quote: any) => {
-    if (!confirm("Confirm Award? This will close the RFQ and create a PO draft.")) return;
+    if (!confirm("Confirm Award? This will close the RFQ and create a PO draft automatically.")) return;
     try {
-        // Fetch Request Details to map items
-        const rfq = rfqs.find(r => r.id === quote.rfq_id);
-        const req = approvedRequests.find(r => r.id === rfq?.material_request_id) || (await dbService.getAllMaterialRequests()).find(r => r.id === rfq?.material_request_id);
-
-        if (!req) { alert("Original request not found"); return; }
-
-        await dbService.createPurchaseOrder({
-           projectId: req.projectId,
-           supplierId: quote.supplier_id,
-           quotationId: quote.id,
-           materialRequestId: req.id,
-           items: req.items.map((i:any) => ({
-              itemId: i.item_id || i.itemId,
-              quantity: i.quantity,
-              price: quote.total_amount / req.items.length // Simple allocation
-           }))
-        });
+        await dbService.selectWinningQuotation(quote.rfq_id, quote.id);
         alert("Awarded Successfully! PO Draft Created.");
         loadData();
-    } catch(e) { alert("Awarding failed"); }
+    } catch(e: any) { alert("Awarding failed: " + e.message); }
   };
 
   return (

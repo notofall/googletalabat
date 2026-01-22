@@ -95,8 +95,12 @@ class QuotationOut(BaseModel):
     currency: str
     valid_until: Optional[datetime]
     is_selected: bool
+    rfq_id: Optional[str]
     class Config:
         from_attributes = True
+
+class WinnerSelectionRequest(BaseModel):
+    quotationId: str
 
 # --- PO ---
 class POItemCreate(ItemBase):

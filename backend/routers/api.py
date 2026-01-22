@@ -111,6 +111,10 @@ def list_quotations(db: Session = Depends(get_db)): return db.query(models.Quota
 def create_quotation(quote: schemas.QuotationCreate, db: Session = Depends(get_db)):
     return ProcurementService.create_quotation(db, quote)
 
+@router.post("/rfqs/{rfq_id}/select-winner", response_model=schemas.POOut)
+def select_winner(rfq_id: str, selection: schemas.WinnerSelectionRequest, db: Session = Depends(get_db), user: models.User = Depends(get_current_user)):
+    return ProcurementService.select_winning_quotation(db, rfq_id, selection.quotationId)
+
 # POs
 @router.get("/purchase-orders", response_model=List[schemas.POOut])
 def list_pos(db: Session = Depends(get_db)): return db.query(models.PurchaseOrder).all()
