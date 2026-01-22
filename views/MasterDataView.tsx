@@ -3,7 +3,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { 
   Building2, Users, Tags, Package, Plus, Search,
   ArrowRight, ShieldCheck, UserCheck, ToggleLeft, ToggleRight,
-  UserPlus, Lock, Trash2, Save, X
+  UserPlus, Lock, Trash2, Save, X, User as UserIcon
 } from 'lucide-react';
 import { Item, UserRole, Project, Supplier, User } from '../types';
 import { dbService } from '../services/databaseService';
@@ -28,7 +28,7 @@ const MasterDataView: React.FC<{ user: User }> = ({ user }) => {
   const [newUser, setNewUser] = useState({ name: '', email: '', role: UserRole.ENGINEER, canEditPOPrices: false, approvalLimit: 0 });
   const [newItem, setNewItem] = useState<Partial<Item>>({ name: '', sku: '', unit: '', basePrice: 0 });
   const [newSupplier, setNewSupplier] = useState<Partial<Supplier>>({ name: '', email: '', contact: '' });
-  const [newProject, setNewProject] = useState<Partial<Project>>({ name: '', code: '', budget: 0 });
+  const [newProject, setNewProject] = useState<Partial<Project>>({ name: '', code: '', ownerName: '', budget: 0 });
 
   const fetchData = async () => {
     if (currentSection === 'permissions') setSystemUsers(await dbService.getAllUsers());
@@ -94,7 +94,7 @@ const MasterDataView: React.FC<{ user: User }> = ({ user }) => {
 
   const filteredItems = useMemo(() => {
     const q = globalSearchQuery.trim().toLowerCase();
-    if (currentSection === 'projects') return projects.filter(p => !q || p.name.toLowerCase().includes(q));
+    if (currentSection === 'projects') return projects.filter(p => !q || p.name.toLowerCase().includes(q) || p.ownerName.toLowerCase().includes(q));
     if (currentSection === 'suppliers') return suppliers.filter(s => !q || s.name.toLowerCase().includes(q));
     if (currentSection === 'catalog') return catalogItems.filter(i => !q || i.name.toLowerCase().includes(q));
     if (currentSection === 'permissions') return systemUsers.filter(u => !q || u.name.toLowerCase().includes(q) || u.email.toLowerCase().includes(q));
@@ -107,7 +107,7 @@ const MasterDataView: React.FC<{ user: User }> = ({ user }) => {
         <button onClick={() => setSelectedProject(null)} className="flex items-center gap-2 text-slate-500 hover:text-emerald-600 transition-colors font-bold"><ArrowRight size={20} /> العودة للمشاريع</button>
         <div className="bg-white p-8 rounded-3xl shadow-sm border border-slate-100">
           <h2 className="text-2xl font-black text-slate-800">{selectedProject.name}</h2>
-          <p className="text-slate-500 font-bold mb-4">إدارة جداول الكميات (BOQ)</p>
+          <p className="text-slate-500 font-bold mb-4">المالك: {selectedProject.ownerName}</p>
           <div className="p-10 text-center bg-slate-50 rounded-2xl border border-dashed border-slate-300 text-slate-400 font-bold">
              هذه الواجهة مخصصة لربط بنود الكتالوج بالمشروع وتحديد الكميات التقديرية.
           </div>
@@ -236,7 +236,11 @@ const MasterDataView: React.FC<{ user: User }> = ({ user }) => {
               {filteredItems.map((prj: any) => (
                 <div key={prj.id} className="bg-white p-8 rounded-3xl border border-slate-100 shadow-sm hover:border-emerald-500 hover:shadow-2xl transition-all group relative">
                    <button onClick={() => handleDelete(prj.id)} className="absolute top-6 left-6 text-slate-300 hover:text-red-500 z-10"><Trash2 size={18}/></button>
-                   <h4 className="text-xl font-black text-slate-800 mb-6 group-hover:text-emerald-700 transition-colors">{prj.name}</h4>
+                   <h4 className="text-xl font-black text-slate-800 mb-2 group-hover:text-emerald-700 transition-colors">{prj.name}</h4>
+                   <div className="flex items-center gap-2 text-slate-400 text-xs font-bold mb-6">
+                      <UserIcon size={14} />
+                      <span>المالك: {prj.ownerName}</span>
+                   </div>
                    <button onClick={() => setSelectedProject(prj)} className="w-full py-3 bg-emerald-50 text-emerald-700 rounded-2xl font-black text-sm hover:bg-emerald-600 hover:text-white transition-all">تخصيص جدول الكميات</button>
                 </div>
               ))}
@@ -270,6 +274,7 @@ const MasterDataView: React.FC<{ user: User }> = ({ user }) => {
                      <>
                         <input className="w-full p-3 border rounded-xl" placeholder="اسم المشروع" value={newProject.name} onChange={e => setNewProject({...newProject, name: e.target.value})} />
                         <input className="w-full p-3 border rounded-xl" placeholder="كود المشروع" value={newProject.code} onChange={e => setNewProject({...newProject, code: e.target.value})} />
+                        <input className="w-full p-3 border rounded-xl" placeholder="اسم مالك المشروع" value={newProject.ownerName} onChange={e => setNewProject({...newProject, ownerName: e.target.value})} />
                         <input type="number" className="w-full p-3 border rounded-xl" placeholder="الميزانية المرصودة" value={newProject.budget} onChange={e => setNewProject({...newProject, budget: Number(e.target.value)})} />
                      </>
                   )}
@@ -290,15 +295,15 @@ const MasterDataView: React.FC<{ user: User }> = ({ user }) => {
               </div>
               <form onSubmit={handleCreateUser} className="p-6 space-y-4">
                  <div className="space-y-2">
-                    <label className="text-xs font-black text-slate-500">الاسم الكامل</label>
+                    <label className="text-sm font-black text-slate-500">الاسم الكامل</label>
                     <input required type="text" value={newUser.name} onChange={e => setNewUser({...newUser, name: e.target.value})} className="w-full p-3 border rounded-xl font-bold" />
                  </div>
                  <div className="space-y-2">
-                    <label className="text-xs font-black text-slate-500">البريد الإلكتروني</label>
+                    <label className="text-sm font-black text-slate-500">البريد الإلكتروني</label>
                     <input required type="email" value={newUser.email} onChange={e => setNewUser({...newUser, email: e.target.value})} className="w-full p-3 border rounded-xl font-bold" />
                  </div>
                  <div className="space-y-2">
-                    <label className="text-xs font-black text-slate-500">الدور الوظيفي</label>
+                    <label className="text-sm font-black text-slate-500">الدور الوظيفي</label>
                     <select value={newUser.role} onChange={e => setNewUser({...newUser, role: e.target.value as UserRole})} className="w-full p-3 border rounded-xl font-bold">
                        {Object.entries(ROLE_NAMES).map(([role, label]) => (
                          <option key={role} value={role}>{label}</option>
@@ -307,7 +312,7 @@ const MasterDataView: React.FC<{ user: User }> = ({ user }) => {
                  </div>
                  <div className="flex items-center gap-4">
                     <div className="flex-1 space-y-2">
-                       <label className="text-xs font-black text-slate-500">سقف الصلاحية المالية</label>
+                       <label className="text-sm font-black text-slate-500">سقف الصلاحية المالية</label>
                        <input type="number" value={newUser.approvalLimit} onChange={e => setNewUser({...newUser, approvalLimit: Number(e.target.value)})} className="w-full p-3 border rounded-xl font-bold" />
                     </div>
                     <div className="flex items-center gap-2 pt-6">

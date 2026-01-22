@@ -1,191 +1,261 @@
 
-import { Project, MaterialRequest, Supplier, Item, PurchaseOrder, ProjectBOQ, Receipt, POStatus, RequestStatus, User } from '../types';
+import { Project, MaterialRequest, Supplier, Item, PurchaseOrder, Receipt, POStatus, RequestStatus, User, UserRole, AuditLog, CostCenter, ProjectBOQ } from '../types';
+
+const DB_KEYS = {
+  USERS: 'itqan_enterprise_users',
+  PROJECTS: 'itqan_enterprise_projects',
+  SUPPLIERS: 'itqan_enterprise_suppliers',
+  CATALOG: 'itqan_enterprise_catalog',
+  REQUESTS: 'itqan_enterprise_requests',
+  POS: 'itqan_enterprise_pos',
+  RECEIPTS: 'itqan_enterprise_receipts',
+  LOGS: 'itqan_enterprise_logs',
+  COST_CENTERS: 'itqan_enterprise_cc'
+};
 
 /**
- * API Client Layer
- * يربط الواجهة الأمامية بالخادم الخلفي (Backend)
+ * Enterprise Audit Logger
  */
-
-const API_BASE_URL = '/api'; // في البيئة الحقيقية قد يكون http://localhost:3000/api أو متغير بيئة
-
-// دالة مساعدة لإجراء طلبات الشبكة
-async function apiCall<T>(endpoint: string, method: string = 'GET', body?: any): Promise<T> {
-  const headers: HeadersInit = {
-    'Content-Type': 'application/json',
-    'Accept': 'application/json',
+const logAction = async (userId: string, userName: string, action: string, details: string, category: AuditLog['category']) => {
+  const logs = JSON.parse(localStorage.getItem(DB_KEYS.LOGS) || '[]');
+  const newLog: AuditLog = {
+    id: `log-${Date.now()}`,
+    userId,
+    userName,
+    action,
+    details,
+    category,
+    timestamp: new Date().toISOString()
   };
+  logs.unshift(newLog);
+  localStorage.setItem(DB_KEYS.LOGS, JSON.stringify(logs.slice(0, 500))); // يحتفظ بآخر 500 عملية
+};
 
-  // إرسال معرف المستخدم الحالي للمصادقة البسيطة (يمكن استبداله بـ JWT Token)
-  const userStr = sessionStorage.getItem('proc_user');
-  if (userStr) {
-    const user = JSON.parse(userStr);
-    headers['X-User-ID'] = user.id; 
+/**
+ * Storage Abstraction Layer
+ */
+const storage = {
+  get: <T>(key: string, defaultValue: T): T => {
+    const data = localStorage.getItem(key);
+    if (!data || data === 'null') return defaultValue;
+    try {
+      return JSON.parse(data);
+    } catch (e) {
+      return defaultValue;
+    }
+  },
+  set: (key: string, data: any) => {
+    localStorage.setItem(key, JSON.stringify(data));
   }
+};
 
-  const config: RequestInit = {
-    method,
-    headers,
-    body: body ? JSON.stringify(body) : undefined,
-  };
+/**
+ * Enterprise Mock API
+ */
+const mockServer = {
+  handleRequest: async (endpoint: string, method: string, body?: any, currentUserId?: string): Promise<any> => {
+    // محاكاة تأخير الشبكة
+    await new Promise(resolve => setTimeout(resolve, 300));
 
-  try {
-    const response = await fetch(`${API_BASE_URL}${endpoint}`, config);
-    
-    if (!response.ok) {
-      // محاولة قراءة رسالة الخطأ من الخادم
-      const errorData = await response.json().catch(() => ({}));
-      throw new Error(errorData.message || `API Error: ${response.status} ${response.statusText}`);
+    // الحصول على المستخدم الحالي للـ Logs
+    const users = storage.get<User[]>(DB_KEYS.USERS, []);
+    const currentUser = users.find(u => u.id === currentUserId);
+
+    // --- Authentication ---
+    if (endpoint === '/auth/login') {
+      const user = users.find(u => u.email === body.email);
+      if (!user) throw new Error('بيانات الدخول غير صحيحة');
+      logAction(user.id, user.name, 'تسجيل دخول', 'دخل المستخدم إلى النظام', 'AUTH');
+      return user;
     }
 
-    // إذا كان الرد فارغاً (مثل 204 No Content)
-    if (response.status === 204) {
-      return {} as T;
+    // --- Audit Logs ---
+    if (endpoint === '/system/logs') return storage.get<AuditLog[]>(DB_KEYS.LOGS, []);
+
+    // --- Users Management ---
+    if (endpoint === '/users') {
+        let allUsers = storage.get<User[]>(DB_KEYS.USERS, []);
+        if (method === 'GET') return allUsers;
+        if (method === 'POST') {
+            const newUser = { ...body, id: `user-${Date.now()}` };
+            allUsers.push(newUser);
+            storage.set(DB_KEYS.USERS, allUsers);
+            if (currentUser) logAction(currentUser.id, currentUser.name, 'إنشاء مستخدم', `تم إنشاء مستخدم جديد: ${body.name}`, 'SYSTEM');
+            return newUser;
+        }
+    }
+    if (endpoint.includes('/permissions') && method === 'POST') {
+        const userId = endpoint.split('/')[2];
+        let allUsers = storage.get<User[]>(DB_KEYS.USERS, []);
+        const idx = allUsers.findIndex(u => u.id === userId);
+        if (idx > -1) {
+            allUsers[idx] = { ...allUsers[idx], ...body };
+            storage.set(DB_KEYS.USERS, allUsers);
+            if (currentUser) logAction(currentUser.id, currentUser.name, 'تعديل صلاحيات', `تعديل صلاحيات المستخدم: ${allUsers[idx].name}`, 'SYSTEM');
+            return allUsers[idx];
+        }
     }
 
-    return await response.json();
-  } catch (error) {
-    console.error(`API Call Failed [${method} ${endpoint}]:`, error);
-    throw error;
+    // --- Projects ---
+    if (endpoint === '/projects') {
+      let projects = storage.get<Project[]>(DB_KEYS.PROJECTS, []);
+      if (method === 'GET') return projects;
+      if (method === 'POST') {
+        projects.push(body);
+        storage.set(DB_KEYS.PROJECTS, projects);
+        if (currentUser) logAction(currentUser.id, currentUser.name, 'إنشاء مشروع', `تم إنشاء مشروع جديد: ${body.name}`, 'PROJECTS');
+        return body;
+      }
+    }
+    if (endpoint.includes('/projects/') && method === 'DELETE') {
+        const id = endpoint.split('/')[2];
+        let projects = storage.get<Project[]>(DB_KEYS.PROJECTS, []);
+        storage.set(DB_KEYS.PROJECTS, projects.filter(p => p.id !== id));
+        return { success: true };
+    }
+    if (endpoint.includes('/boq') && method === 'GET') {
+        // Mock BOQ retrieval
+        const catalog = storage.get<Item[]>(DB_KEYS.CATALOG, []);
+        return catalog.map(item => ({
+            itemId: item.id,
+            totalQuantity: 1000,
+            receivedQuantity: 150
+        } as ProjectBOQ));
+    }
+
+    // --- Material Requests ---
+    if (endpoint.includes('/material-requests/') && method === 'POST' && endpoint.endsWith('/status')) {
+        const id = endpoint.split('/')[2];
+        let requests = storage.get<MaterialRequest[]>(DB_KEYS.REQUESTS, []);
+        const idx = requests.findIndex(r => r.id === id);
+        if (idx > -1) {
+            requests[idx].status = body.status;
+            storage.set(DB_KEYS.REQUESTS, requests);
+            if (currentUser) logAction(currentUser.id, currentUser.name, 'تحديث طلب مواد', `تحديث حالة الطلب ${id} إلى ${body.status}`, 'PROCUREMENT');
+            return requests[idx];
+        }
+    }
+
+    // --- Purchase Orders ---
+    if (endpoint === '/purchase-orders') {
+      let pos = storage.get<PurchaseOrder[]>(DB_KEYS.POS, []);
+      if (method === 'GET') return pos;
+      if (method === 'POST') {
+        pos.push(body);
+        storage.set(DB_KEYS.POS, pos);
+        if (currentUser) logAction(currentUser.id, currentUser.name, 'إصدار أمر شراء', `تم إصدار PO رقم ${body.id} بمبلغ ${body.totalAmount}`, 'PROCUREMENT');
+        return body;
+      }
+    }
+
+    if (endpoint.includes('/purchase-orders/') && method === 'PUT') {
+        const id = endpoint.split('/')[2];
+        let pos = storage.get<PurchaseOrder[]>(DB_KEYS.POS, []);
+        const idx = pos.findIndex(p => p.id === id);
+        if (idx > -1) {
+            pos[idx] = body;
+            storage.set(DB_KEYS.POS, pos);
+            if (currentUser) logAction(currentUser.id, currentUser.name, 'تعديل أمر شراء', `تم تعديل بيانات PO رقم ${id}`, 'PROCUREMENT');
+            return body;
+        }
+    }
+
+    if (endpoint.includes('/approve') && method === 'POST') {
+        const poId = endpoint.split('/')[2];
+        let pos = storage.get<PurchaseOrder[]>(DB_KEYS.POS, []);
+        const idx = pos.findIndex(p => p.id === poId);
+        if (idx > -1) {
+            pos[idx].status = POStatus.APPROVED;
+            storage.set(DB_KEYS.POS, pos);
+            if (currentUser) logAction(currentUser.id, currentUser.name, 'تعميد مالي', `تم اعتماد PO رقم ${poId}`, 'PROCUREMENT');
+            return pos[idx];
+        }
+    }
+
+    // --- Generic Routing for Catalog and Suppliers ---
+    const simpleRoutes: Record<string, string> = {
+        '/items': DB_KEYS.CATALOG,
+        '/suppliers': DB_KEYS.SUPPLIERS,
+        '/cost-centers': DB_KEYS.COST_CENTERS,
+        '/material-requests': DB_KEYS.REQUESTS,
+        '/receipts': DB_KEYS.RECEIPTS
+    };
+
+    const baseRoute = Object.keys(simpleRoutes).find(r => endpoint.startsWith(r));
+    if (baseRoute) {
+        let data = storage.get<any[]>(simpleRoutes[baseRoute], []);
+        if (method === 'GET') return data;
+        if (method === 'POST') {
+            data.push(body);
+            storage.set(simpleRoutes[baseRoute], data);
+            return body;
+        }
+        if (method === 'DELETE') {
+            const id = endpoint.split('/')[2];
+            storage.set(simpleRoutes[baseRoute], data.filter(d => d.id !== id));
+            return { success: true };
+        }
+    }
+
+    return null;
   }
-}
+};
 
 export const dbService = {
-  // --- المصادقة والمستخدمين ---
+  getCurrentUserId: () => JSON.parse(sessionStorage.getItem('proc_user') || '{}').id,
 
-  isSystemInitialized: async (): Promise<boolean> => {
-    return apiCall<boolean>('/system/init-status');
+  isSystemInitialized: async () => {
+    const users = storage.get<User[]>(DB_KEYS.USERS, []);
+    return users.some(u => u.role === UserRole.ADMIN);
   },
 
-  registerSystemAdmin: async (name: string, email: string, password: string): Promise<User> => {
-    return apiCall<User>('/auth/register-admin', 'POST', { name, email, password });
+  registerSystemAdmin: async (name: string, email: string) => {
+    const newUser = { id: 'admin-1', name, email, role: UserRole.ADMIN, canEditPOPrices: true, approvalLimit: 999999999 };
+    storage.set(DB_KEYS.USERS, [newUser]);
+    logAction(newUser.id, name, 'تهيئة النظام', 'تم إنشاء أول مستخدم مدير', 'SYSTEM');
+    return newUser;
   },
 
-  authenticateUser: async (email: string, password: string): Promise<User | null> => {
-    try {
-      return await apiCall<User>('/auth/login', 'POST', { email, password });
-    } catch (e) {
-      return null;
-    }
-  },
+  authenticateUser: async (email: string) => mockServer.handleRequest('/auth/login', 'POST', { email }),
 
-  getAllUsers: async (): Promise<User[]> => {
-    return apiCall<User[]>('/users');
-  },
+  getSystemLogs: async () => (await mockServer.handleRequest('/system/logs', 'GET')) || [],
 
-  createUser: async (user: Omit<User, 'id'>): Promise<User> => {
-    return apiCall<User>('/users', 'POST', user);
-  },
+  // Projects
+  getProjects: async () => (await mockServer.handleRequest('/projects', 'GET')) || [],
+  createProject: async (p: Project) => mockServer.handleRequest('/projects', 'POST', p, dbService.getCurrentUserId()),
+  deleteProject: async (id: string) => mockServer.handleRequest(`/projects/${id}`, 'DELETE', {}, dbService.getCurrentUserId()),
+  getProjectBOQ: async (projectId: string) => (await mockServer.handleRequest(`/projects/${projectId}/boq`, 'GET')) || [],
 
-  updateUserPermissions: async (userId: string, updates: Partial<User>) => {
-    await apiCall(`/users/${userId}/permissions`, 'PATCH', updates);
-    return true;
-  },
+  // Material Requests
+  getAllMaterialRequests: async () => (await mockServer.handleRequest('/material-requests', 'GET')) || [],
+  createMaterialRequest: async (req: MaterialRequest) => mockServer.handleRequest('/material-requests', 'POST', req, dbService.getCurrentUserId()),
+  updateMaterialRequestStatus: async (id: string, status: RequestStatus) => mockServer.handleRequest(`/material-requests/${id}/status`, 'POST', { status }, dbService.getCurrentUserId()),
 
-  // --- البيانات الأساسية (Master Data) ---
-
-  // المشاريع
-  getProjects: async (userId?: string) => {
-    const query = userId ? `?userId=${userId}` : '';
-    return apiCall<Project[]>(`/projects${query}`);
-  },
-
-  createProject: async (p: Project) => {
-    await apiCall('/projects', 'POST', p);
-    return true;
-  },
-
-  deleteProject: async (id: string) => {
-    await apiCall(`/projects/${id}`, 'DELETE');
-    return true;
-  },
-
-  // الموردين
-  getSuppliers: async () => {
-    return apiCall<Supplier[]>('/suppliers');
-  },
-
-  createSupplier: async (s: Supplier) => {
-    await apiCall('/suppliers', 'POST', s);
-    return true;
-  },
-
-  deleteSupplier: async (id: string) => {
-    await apiCall(`/suppliers/${id}`, 'DELETE');
-    return true;
-  },
-
-  // الكتالوج
-  getCatalogItems: async () => {
-    return apiCall<Item[]>('/items');
-  },
-
-  createCatalogItem: async (i: Item) => {
-    await apiCall('/items', 'POST', i);
-    return true;
-  },
-
-  deleteCatalogItem: async (id: string) => {
-    await apiCall(`/items/${id}`, 'DELETE');
-    return true;
-  },
-
-  getProjectBOQ: async (projectId: string) => {
-    return apiCall<ProjectBOQ[]>(`/projects/${projectId}/boq`);
-  },
-
-  // --- العمليات (Transactions) ---
-
-  // طلبات المواد
-  getAllMaterialRequests: async () => {
-    return apiCall<MaterialRequest[]>('/material-requests');
-  },
-
-  createMaterialRequest: async (req: MaterialRequest) => {
-    await apiCall('/material-requests', 'POST', req);
-    return true;
-  },
-
-  updateMaterialRequestStatus: async (id: string, status: RequestStatus) => {
-    await apiCall(`/material-requests/${id}/status`, 'PATCH', { status });
-    return true;
-  },
-
-  // أوامر الشراء
-  getAllPOs: async () => {
-    return apiCall<PurchaseOrder[]>('/purchase-orders');
-  },
-
+  // Purchase Orders
+  getAllPOs: async () => (await mockServer.handleRequest('/purchase-orders', 'GET')) || [],
   getPendingPOs: async () => {
-    // يمكن تصفية البيانات في الخادم عبر Query Params
-    return apiCall<PurchaseOrder[]>('/purchase-orders?status=PENDING_APPROVAL');
+    const pos = (await dbService.getAllPOs()) || [];
+    return pos.filter((p: PurchaseOrder) => [POStatus.PENDING_APPROVAL, POStatus.APPROVED, POStatus.PARTIALLY_RECEIVED, POStatus.SENT_TO_SUPPLIER].includes(p.status));
   },
+  createPurchaseOrder: async (po: PurchaseOrder) => mockServer.handleRequest('/purchase-orders', 'POST', po, dbService.getCurrentUserId()),
+  approvePO: async (poId: string) => mockServer.handleRequest(`/purchase-orders/${poId}/approve`, 'POST', {}, dbService.getCurrentUserId()),
+  updatePO: async (po: PurchaseOrder) => mockServer.handleRequest(`/purchase-orders/${po.id}`, 'PUT', po, dbService.getCurrentUserId()),
+  
+  // Master Data
+  getSuppliers: async () => (await mockServer.handleRequest('/suppliers', 'GET')) || [],
+  createSupplier: async (s: Supplier) => mockServer.handleRequest('/suppliers', 'POST', s, dbService.getCurrentUserId()),
+  deleteSupplier: async (id: string) => mockServer.handleRequest(`/suppliers/${id}`, 'DELETE', {}, dbService.getCurrentUserId()),
+  
+  getCatalogItems: async () => (await mockServer.handleRequest('/items', 'GET')) || [],
+  createCatalogItem: async (i: Item) => mockServer.handleRequest('/items', 'POST', i, dbService.getCurrentUserId()),
+  deleteCatalogItem: async (id: string) => mockServer.handleRequest(`/items/${id}`, 'DELETE', {}, dbService.getCurrentUserId()),
+  
+  // Receipts
+  getReceiptsHistory: async () => (await mockServer.handleRequest('/receipts', 'GET')) || [],
+  createReceipt: async (receipt: any) => mockServer.handleRequest('/receipts', 'POST', receipt, dbService.getCurrentUserId()),
 
-  getPOById: async (id: string) => {
-    return apiCall<PurchaseOrder>(`/purchase-orders/${id}`);
-  },
-
-  createPurchaseOrder: async (po: PurchaseOrder) => {
-    await apiCall('/purchase-orders', 'POST', po);
-    return true;
-  },
-
-  updatePO: async (po: PurchaseOrder) => {
-    await apiCall(`/purchase-orders/${po.id}`, 'PUT', po);
-    return true;
-  },
-
-  approvePO: async (poId: string, approverId: string) => {
-    await apiCall(`/purchase-orders/${poId}/approve`, 'POST', { approverId });
-    return true;
-  },
-
-  // الاستلام والمخزون
-  createReceipt: async (receiptData: Receipt) => {
-    await apiCall('/receipts', 'POST', receiptData);
-    return true;
-  },
-
-  getReceiptsHistory: async () => {
-    return apiCall<Receipt[]>('/receipts');
-  }
+  // Users Management
+  getAllUsers: async () => (await mockServer.handleRequest('/users', 'GET')) || [],
+  createUser: async (u: any) => mockServer.handleRequest('/users', 'POST', u, dbService.getCurrentUserId()),
+  updateUserPermissions: async (id: string, perms: any) => mockServer.handleRequest(`/users/${id}/permissions`, 'POST', perms, dbService.getCurrentUserId()),
 };

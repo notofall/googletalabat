@@ -17,6 +17,7 @@ CREATE TABLE projects (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name VARCHAR(255) NOT NULL,
     code VARCHAR(50) UNIQUE NOT NULL,
+    owner_name VARCHAR(255) NOT NULL, -- اسم مالك المشروع
     total_budget DECIMAL(15, 2) NOT NULL,
     spent_amount DECIMAL(15, 2) DEFAULT 0.00,
     status VARCHAR(50) DEFAULT 'ACTIVE',

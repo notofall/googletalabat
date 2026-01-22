@@ -27,9 +27,9 @@ const MaterialRequestView: React.FC<{ user: User }> = ({ user }) => {
 
   useEffect(() => {
     const fetchData = async () => {
-      // 1. Load Projects
-      const allPrj = await dbService.getProjects(user.id);
-      const userProjects = allPrj.filter(prj => 
+      // 1. Load Projects - getProjects expects no arguments
+      const allPrj = await dbService.getProjects();
+      const userProjects = allPrj.filter((prj: any) => 
         user.role === UserRole.ADMIN || 
         user.role === UserRole.GENERAL_MANAGER || 
         user.role === UserRole.PROCUREMENT_MANAGER ||
@@ -43,7 +43,7 @@ const MaterialRequestView: React.FC<{ user: User }> = ({ user }) => {
       setCatalogItems(await dbService.getCatalogItems());
     };
     fetchData();
-  }, [showForm]);
+  }, [showForm, user.id, user.role]);
 
   const filteredItems = useMemo(() => {
     const term = searchTerm.trim().toLowerCase();
@@ -102,6 +102,7 @@ const MaterialRequestView: React.FC<{ user: User }> = ({ user }) => {
 
   const handleTechnicalApprove = async (reqId: string) => {
     if(confirm("هل أنت متأكد من اعتماد المواصفات الفنية لهذا الطلب؟ سيظهر بعدها في قسم المشتريات.")) {
+      // updateMaterialRequestStatus is defined in dbService
       await dbService.updateMaterialRequestStatus(reqId, RequestStatus.APPROVED_TECHNICAL);
       setRequests(await dbService.getAllMaterialRequests());
     }
@@ -235,7 +236,7 @@ const MaterialRequestView: React.FC<{ user: User }> = ({ user }) => {
                  {requestItems.map((it, idx) => (
                    <div key={idx} className="flex gap-4 items-center bg-white p-4 rounded-2xl border border-slate-200 group">
                       <div className="flex-1"><p className="font-black text-slate-800">{it.name}</p><p className="text-[10px] text-slate-400 font-bold uppercase">{it.unit}</p></div>
-                      <div className="w-24"><input type="number" value={it.quantity} onChange={(e) => setRequestItems(requestItems.map((r, i) => i === idx ? { ...r, quantity: e.target.value } : r))} className="w-full p-2 bg-slate-50 border border-slate-200 rounded-xl text-center font-black" /></div>
+                      <div className="w-24"><input type="number" value={it.quantity} onChange={(e) => setRequestItems(requestItems.map((r, i) => i === idx ? { ...r, quantity: Number(e.target.value) } : r))} className="w-full p-2 bg-slate-50 border border-slate-200 rounded-xl text-center font-black" /></div>
                       <button onClick={() => setRequestItems(requestItems.filter((_, i) => i !== idx))} className="p-2 text-slate-300 hover:text-red-500"><Trash2 size={18}/></button>
                    </div>
                  ))}

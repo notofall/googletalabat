@@ -2,6 +2,7 @@
   "name": "إتقان v2.0 Enterprise",
   "description": "نظام إدارة المشتريات المؤسسي - الإصدار الثاني. يدعم الأداء العالي والتحليلات الذكية.",
   "requestFramePermissions": [
-    "camera"
+    "camera",
+    "microphone"
   ]
 }

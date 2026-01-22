@@ -11,10 +11,9 @@ const ApprovalsView: React.FC<{ user: User }> = ({ user }) => {
 
   useEffect(() => {
     const loadData = async () => {
+      // getPendingPOs is now defined in dbService
       const pos = await dbService.getPendingPOs();
-      // Filter logic: Show only what this user MIGHT be interested in
-      // In a real DB query, we would filter WHERE status = 'PENDING'
-      setPendingApprovals(pos.filter(p => p.status === 'PENDING_APPROVAL'));
+      setPendingApprovals(pos);
     };
     loadData();
   }, []);
@@ -29,7 +28,8 @@ const ApprovalsView: React.FC<{ user: User }> = ({ user }) => {
     }
 
     if (confirm(`هل أنت متأكد من تعميد أمر الشراء بقيمة ${po.totalAmount.toLocaleString()} ر.س؟`)) {
-       const success = await dbService.approvePO(po.id, user.id);
+       // approvePO expects 1 argument (poId)
+       const success = await dbService.approvePO(po.id);
        if (success) {
          alert("تم التعميد بنجاح!");
          setPendingApprovals(prev => prev.filter(p => p.id !== po.id));

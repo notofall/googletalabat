@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   AreaChart, Area
@@ -21,7 +21,8 @@ import {
   Tag,
   Search
 } from 'lucide-react';
-import { UserRole } from '../types';
+import { UserRole, Project } from '../types';
+import { dbService } from '../services/databaseService';
 
 const ReportsView: React.FC<{ user: any }> = ({ user }) => {
   const [startDate, setStartDate] = useState<string>('2024-01-01');
@@ -29,12 +30,14 @@ const ReportsView: React.FC<{ user: any }> = ({ user }) => {
   const [selectedProject, setSelectedProject] = useState<string>('all');
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [itemSearch, setItemSearch] = useState('');
+  const [projects, setProjects] = useState<Project[]>([]);
 
-  const mockProjects = [
-    { id: '1', name: 'برج التجارة العالمي' },
-    { id: '2', name: 'مجمع واحة العلوم' },
-    { id: '3', name: 'فيلا حي النخيل' },
-  ];
+  useEffect(() => {
+    const loadProjects = async () => {
+      setProjects(await dbService.getProjects());
+    };
+    loadProjects();
+  }, []);
 
   const data = [
     { name: 'مشروع البرج', budget: 1000000, actual: 850000 },
@@ -50,13 +53,18 @@ const ReportsView: React.FC<{ user: any }> = ({ user }) => {
     { month: 'مايو', value: 32000 },
   ];
 
-  // بيانات تفصيلية بالأصناف للتقرير
+  // بيانات تفصيلية بالأصناف للتقرير مع دمج اسم المالك للمشاريع
   const itemLevelReport = [
-    { name: 'أسمنت بورتلاندي', category: 'مواد إنشائية', totalQty: 5000, avgPrice: 22.5, minPrice: 21, maxPrice: 24, totalSpent: 112500 },
-    { name: 'حديد تسليح 12مم', category: 'مواد إنشائية', totalQty: 250, avgPrice: 2850, minPrice: 2700, maxPrice: 3100, totalSpent: 712500 },
-    { name: 'كيابل كهربائية', category: 'كهرباء', totalQty: 1200, avgPrice: 45, minPrice: 40, maxPrice: 55, totalSpent: 54000 },
-    { name: 'طلاء جدران داخلي', category: 'تشطيبات', totalQty: 450, avgPrice: 180, minPrice: 165, maxPrice: 210, totalSpent: 81000 },
-  ].filter(item => !itemSearch || item.name.includes(itemSearch) || item.category.includes(itemSearch));
+    { name: 'أسمنت بورتلاندي', category: 'مواد إنشائية', totalQty: 5000, avgPrice: 22.5, minPrice: 21, maxPrice: 24, totalSpent: 112500, owner: 'شركة العقارات الوطنية' },
+    { name: 'حديد تسليح 12مم', category: 'مواد إنشائية', totalQty: 250, avgPrice: 2850, minPrice: 2700, maxPrice: 3100, totalSpent: 712500, owner: 'وزارة الاستثمار' },
+    { name: 'كيابل كهربائية', category: 'كهرباء', totalQty: 1200, avgPrice: 45, minPrice: 40, maxPrice: 55, totalSpent: 54000, owner: 'شركة العقارات الوطنية' },
+    { name: 'طلاء جدران داخلي', category: 'تشطيبات', totalQty: 450, avgPrice: 180, minPrice: 165, maxPrice: 210, totalSpent: 81000, owner: 'وزارة الاستثمار' },
+  ].filter(item => 
+    !itemSearch || 
+    item.name.includes(itemSearch) || 
+    item.category.includes(itemSearch) || 
+    item.owner.includes(itemSearch)
+  );
 
   const handleRefresh = () => {
     setIsRefreshing(true);
@@ -68,7 +76,7 @@ const ReportsView: React.FC<{ user: any }> = ({ user }) => {
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
         <div>
           <h2 className="text-2xl font-bold text-slate-800">التقارير التحليلية التفصيلية</h2>
-          <p className="text-slate-500">تحليل الأداء المالي على مستوى الأصناف والمشاريع والموردين.</p>
+          <p className="text-slate-500">تحليل الأداء المالي على مستوى الأصناف والمشاريع والملاك.</p>
         </div>
         <div className="flex flex-wrap gap-2">
           <button className="bg-white border border-slate-200 text-emerald-700 px-5 py-2.5 rounded-xl font-bold flex items-center gap-2 hover:bg-emerald-50 transition-all shadow-sm">
@@ -91,7 +99,7 @@ const ReportsView: React.FC<{ user: any }> = ({ user }) => {
               className="w-full p-3 bg-slate-50 border border-slate-100 rounded-xl font-bold text-xs outline-none focus:ring-2 focus:ring-emerald-500"
             >
               <option value="all">كافة المشاريع</option>
-              {mockProjects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+              {projects.map(p => <option key={p.id} value={p.id}>{p.name} ({p.ownerName})</option>)}
             </select>
           </div>
           <div className="space-y-1">
@@ -116,8 +124,8 @@ const ReportsView: React.FC<{ user: any }> = ({ user }) => {
         <div className="lg:col-span-2 bg-white p-8 rounded-3xl shadow-sm border border-slate-100">
            <div className="flex justify-between items-center mb-8">
               <div>
-                 <h3 className="text-xl font-black text-slate-800">تحليل المصروفات بالأصناف</h3>
-                 <p className="text-xs text-slate-400 font-bold mt-1">تتبع إجمالي الكميات الموردة ومتوسط أسعار السوق.</p>
+                 <h3 className="text-xl font-black text-slate-800">تحليل المصروفات بالأصناف والملاك</h3>
+                 <p className="text-xs text-slate-400 font-bold mt-1">تتبع إجمالي الكميات الموردة ومتوسط أسعار السوق حسب المالك.</p>
               </div>
               <div className="relative w-64">
                  <Search className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-300" size={16} />
@@ -125,7 +133,7 @@ const ReportsView: React.FC<{ user: any }> = ({ user }) => {
                     type="text" 
                     value={itemSearch}
                     onChange={e => setItemSearch(e.target.value)}
-                    placeholder="ابحث عن صنف أو تصنيف..." 
+                    placeholder="ابحث عن صنف أو مالك أو تصنيف..." 
                     className="w-full pr-10 pl-4 py-2 bg-slate-50 border border-slate-100 rounded-xl text-xs font-bold outline-none focus:ring-2 focus:ring-emerald-500"
                  />
               </div>
@@ -135,7 +143,7 @@ const ReportsView: React.FC<{ user: any }> = ({ user }) => {
               <table className="w-full text-right">
                 <thead className="bg-slate-50/50 text-slate-400 text-[10px] font-black uppercase tracking-widest border-b">
                    <tr>
-                      <th className="p-4 px-6">الصنف / التصنيف</th>
+                      <th className="p-4 px-6">الصنف / المالك</th>
                       <th className="p-4">إجمالي الكمية</th>
                       <th className="p-4">متوسط السعر</th>
                       <th className="p-4">أدنى / أعلى سعر</th>
@@ -147,7 +155,7 @@ const ReportsView: React.FC<{ user: any }> = ({ user }) => {
                      <tr key={i} className="hover:bg-slate-50/50 transition-colors group">
                         <td className="p-4 px-6">
                            <p className="font-black text-slate-800 group-hover:text-emerald-700 transition-colors">{item.name}</p>
-                           <p className="text-[10px] text-slate-400 font-bold uppercase">{item.category}</p>
+                           <p className="text-[10px] text-slate-400 font-bold uppercase tracking-tight">المالك: {item.owner}</p>
                         </td>
                         <td className="p-4 font-bold text-slate-600">{item.totalQty.toLocaleString()}</td>
                         <td className="p-4 font-black text-slate-800">{item.avgPrice.toLocaleString()} <span className="text-[10px] text-slate-400 font-normal">ر.س</span></td>
@@ -173,12 +181,12 @@ const ReportsView: React.FC<{ user: any }> = ({ user }) => {
         <div className="space-y-6">
            <div className="bg-slate-900 text-white p-8 rounded-3xl shadow-2xl relative overflow-hidden group">
               <div className="relative z-10">
-                 <h3 className="text-lg font-black mb-6">أعلى 3 أصناف استهلاكاً للميزانية</h3>
+                 <h3 className="text-lg font-black mb-6">أعلى 3 ملاك استهلاكاً للميزانية</h3>
                  <div className="space-y-6">
                     {itemLevelReport.slice(0, 3).map((item, i) => (
                        <div key={i} className="space-y-2">
                           <div className="flex justify-between text-xs font-black uppercase tracking-widest">
-                             <span className="text-slate-400">{item.name}</span>
+                             <span className="text-slate-400 truncate max-w-[70%]">{item.owner}</span>
                              <span className="text-emerald-400">{Math.round((item.totalSpent / 960000) * 100)}%</span>
                           </div>
                           <div className="h-1.5 bg-white/5 rounded-full overflow-hidden">
@@ -190,7 +198,7 @@ const ReportsView: React.FC<{ user: any }> = ({ user }) => {
                        </div>
                     ))}
                  </div>
-                 <button className="w-full mt-10 py-3 bg-white/5 border border-white/10 rounded-2xl text-xs font-black hover:bg-white/10 transition-all">مشاهدة التحليل الكامل للأصناف</button>
+                 <button className="w-full mt-10 py-3 bg-white/5 border border-white/10 rounded-2xl text-xs font-black hover:bg-white/10 transition-all">مشاهدة تحليل الحصص السوقية للملاك</button>
               </div>
            </div>
 

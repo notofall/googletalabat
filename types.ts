@@ -14,27 +14,45 @@ export interface User {
   email: string;
   role: UserRole;
   approvalLimit?: number;
-  canEditPOPrices?: boolean; 
+  canEditPOPrices?: boolean;
+  department?: string;
+}
+
+export interface CostCenter {
+  id: string;
+  name: string;
+  code: string;
 }
 
 export interface Project {
   id: string;
   name: string;
   code: string;
+  ownerName: string;
+  costCenterId: string;
   budget: number;
   spent: number;
-  status: string;
+  status: 'ACTIVE' | 'ARCHIVED' | 'ON_HOLD';
   assignedUserIds: string[];
 }
 
+/**
+ * BOQ Item for monitoring quantity limits
+ */
 export interface ProjectBOQ {
-  id: string;
-  projectId: string;
   itemId: string;
-  itemName: string; // denormalized for UI
-  unit: string;
   totalQuantity: number;
   receivedQuantity: number;
+}
+
+export interface AuditLog {
+  id: string;
+  userId: string;
+  userName: string;
+  action: string;
+  details: string;
+  timestamp: string;
+  category: 'AUTH' | 'PROCUREMENT' | 'PROJECTS' | 'SYSTEM';
 }
 
 export interface Item {
@@ -77,15 +95,15 @@ export interface MaterialRequest {
   id: string;
   projectId: string;
   requesterId: string;
-  requesterName: string; // denormalized
-  projectName: string; // denormalized
+  requesterName: string;
+  projectName: string;
   status: RequestStatus;
   createdAt: string;
   items: RequestItem[];
 }
 
 export interface RequestItem {
-  id: string; // unique ID for the line item
+  id: string;
   itemId: string;
   name: string;
   unit: string;
@@ -111,9 +129,9 @@ export interface POItem {
   itemId: string;
   name: string;
   unit: string;
-  quantity: number; // الكمية المطلوبة في أمر الشراء
+  quantity: number;
   price: number;
-  receivedQuantity: number; // الكمية التي تم استلامها بالفعل على هذا البند
+  receivedQuantity: number;
 }
 
 export interface Receipt {
