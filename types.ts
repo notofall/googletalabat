@@ -8,20 +8,44 @@ export enum UserRole {
   ADMIN = 'ADMIN'
 }
 
+export interface UserPermissions {
+  canCreateRequest: boolean;
+  canApproveTechnical: boolean;
+  canApproveFinancial: boolean;
+  canManageProcurement: boolean;
+  canManageInventory: boolean;
+  canEditSystemSettings: boolean;
+  canViewReports: boolean;
+  canEditPrices: boolean;
+}
+
 export interface User {
   id: string;
   name: string;
   email: string;
   role: UserRole;
   approvalLimit?: number;
-  canEditPOPrices?: boolean;
+  permissions: UserPermissions;
   department?: string;
+  access_token?: string;
 }
 
-export interface CostCenter {
-  id: string;
-  name: string;
-  code: string;
+export interface SystemSettings {
+  companyName: string;
+  companyLogoUrl?: string;
+  taxNumber?: string;
+  currency: string;
+  address?: string;
+  reportHeaderColor?: string;
+  poFooterText?: string;
+}
+
+export interface ReportConfig {
+  showSupplierRating: boolean;
+  showBudgetVariance: boolean;
+  showAuditStamp: boolean;
+  showRequesterIdentity: boolean;
+  defaultPeriodDays: number;
 }
 
 export interface Project {
@@ -34,15 +58,6 @@ export interface Project {
   spent: number;
   status: 'ACTIVE' | 'ARCHIVED' | 'ON_HOLD';
   assignedUserIds: string[];
-}
-
-/**
- * BOQ Item for monitoring quantity limits
- */
-export interface ProjectBOQ {
-  itemId: string;
-  totalQuantity: number;
-  receivedQuantity: number;
 }
 
 export interface AuditLog {
@@ -146,4 +161,10 @@ export interface Receipt {
 export interface ReceiptItem {
   itemId: string;
   quantity: number;
+}
+
+export interface ProjectBOQ {
+  itemId: string;
+  totalQuantity: number;
+  receivedQuantity: number;
 }

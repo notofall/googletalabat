@@ -1,8 +1,5 @@
 {
-  "name": "إتقان v2.0 Enterprise",
-  "description": "نظام إدارة المشتريات المؤسسي - الإصدار الثاني. يدعم الأداء العالي والتحليلات الذكية.",
-  "requestFramePermissions": [
-    "camera",
-    "microphone"
-  ]
+  "name": "الغزالي v2.0 Enterprise",
+  "description": "نظام إدارة المشتريات المؤسسي - الإصدار الثاني. يدعم الأداء العالي والتحليلات الذكية.\nتطوير محمد مهدي ",
+  "requestFramePermissions": []
 }

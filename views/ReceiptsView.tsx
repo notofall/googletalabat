@@ -13,31 +13,27 @@ const ReceiptsView: React.FC<{ user: User }> = ({ user }) => {
   const [poNumber, setPoNumber] = useState('');
   const [receiptSuccess, setReceiptSuccess] = useState(false);
   
-  // State linked to Database Tables
   const [pendingPOs, setPendingPOs] = useState<PurchaseOrder[]>([]);
   const [historyReceipts, setHistoryReceipts] = useState<any[]>([]);
   
-  // Selected PO State
   const [selectedPO, setSelectedPO] = useState<PurchaseOrder | null>(null);
   const [inputQuantities, setInputQuantities] = useState<Record<string, number>>({});
 
-  // Load Data
   useEffect(() => {
     const loadData = async () => {
       const pos = await dbService.getPendingPOs();
-      // Filter only Approved POs for reception (System Logic)
+      // Only Approved/Partially Received POs
       setPendingPOs(pos.filter(p => p.status === 'APPROVED' || p.status === 'PARTIALLY_RECEIVED' || p.status === 'SENT_TO_SUPPLIER'));
       
       const hist = await dbService.getReceiptsHistory();
       setHistoryReceipts(hist);
     };
     loadData();
-  }, [receiptSuccess]);
+  }, [receiptSuccess, activeTab]);
 
   const handleSelectPO = (po: PurchaseOrder) => {
     setPoNumber(po.id);
     setSelectedPO(po);
-    // Reset inputs
     const initialInputs: Record<string, number> = {};
     po.items.forEach(item => initialInputs[item.itemId] = 0);
     setInputQuantities(initialInputs);
@@ -50,31 +46,17 @@ const ReceiptsView: React.FC<{ user: User }> = ({ user }) => {
   const handleConfirmReceipt = async () => {
     if (!selectedPO) return;
 
-    // 1. Validation Phase (Business Logic Layer)
     const itemsToReceive = [];
     
     for (const item of selectedPO.items) {
       const inputQty = inputQuantities[item.itemId] || 0;
       if (inputQty > 0) {
-        // BL-002 Rule Check
+        // UI Logic validation
         const validation = BusinessRules.validateReceiptQuantity(item, inputQty);
         if (!validation.valid) {
           alert(`خطأ في البند "${item.name}": ${validation.message}`);
           return;
         }
-
-        // BL-003 Rule Check (Optional Warning)
-        const boqList = await dbService.getProjectBOQ(selectedPO.projectId);
-        const boqItem = boqList.find(b => b.itemId === item.itemId);
-        if (boqItem) {
-           const boqCheck = BusinessRules.checkBOQStatus(boqItem, inputQty);
-           if (boqCheck.status === 'CRITICAL') {
-             if(!confirm(`تحذير حرج! ${boqCheck.message} هل تريد المتابعة رغم ذلك؟`)) return;
-           } else if (boqCheck.status === 'WARNING') {
-             alert(boqCheck.message);
-           }
-        }
-
         itemsToReceive.push({ itemId: item.itemId, quantity: inputQty });
       }
     }
@@ -84,21 +66,19 @@ const ReceiptsView: React.FC<{ user: User }> = ({ user }) => {
       return;
     }
 
-    // 2. Execution Phase (Database Layer)
-    const success = await dbService.createReceipt({
-      id: `REC-${Date.now()}`,
-      poId: selectedPO.id,
-      projectId: selectedPO.projectId,
-      receivedDate: new Date().toISOString().split('T')[0],
-      receivedBy: user.name,
-      items: itemsToReceive
-    });
+    try {
+      await dbService.createReceipt({
+        // NO ID GENERATION HERE
+        poId: selectedPO.id,
+        items: itemsToReceive
+      });
 
-    if (success) {
       setReceiptSuccess(true);
       setPoNumber('');
       setSelectedPO(null);
       setTimeout(() => setReceiptSuccess(false), 5000);
+    } catch (e: any) {
+      alert(`فشل الاستلام: ${e.message}`);
     }
   };
 
@@ -139,10 +119,10 @@ const ReceiptsView: React.FC<{ user: User }> = ({ user }) => {
                       className={`min-w-[240px] p-4 rounded-2xl border text-right transition-all shrink-0 ${selectedPO?.id === po.id ? 'bg-emerald-50 border-emerald-500 ring-1 ring-emerald-500' : 'bg-slate-50 border-slate-200 hover:border-emerald-300'}`}
                    >
                       <div className="flex justify-between items-start mb-2">
-                         <span className="font-black text-slate-800 text-sm">{po.id}</span>
-                         <span className="text-[10px] bg-white px-2 py-0.5 rounded border text-slate-500">{po.createdAt}</span>
+                         <span className="font-black text-slate-800 text-sm">{po.id.slice(0,8)}</span>
+                         <span className="text-[10px] bg-white px-2 py-0.5 rounded border text-slate-500">{new Date(po.createdAt).toLocaleDateString()}</span>
                       </div>
-                      <p className="text-xs font-bold text-emerald-700 mb-0.5 truncate">{po.supplierName}</p>
+                      <p className="text-xs font-bold text-emerald-700 mb-0.5 truncate">{po.supplierName || po.supplierId}</p>
                       <p className="text-[10px] text-slate-500 truncate">{po.projectName}</p>
                    </button>
                 ))}
@@ -153,7 +133,7 @@ const ReceiptsView: React.FC<{ user: User }> = ({ user }) => {
           {selectedPO && (
             <div className="bg-white p-5 md:p-8 rounded-3xl shadow-sm border border-slate-100 animate-slideUp">
               <h3 className="text-xl font-bold mb-6 flex items-center gap-2">
-                <ClipboardCheck className="text-emerald-600" /> نموذج استلام: {selectedPO.id}
+                <ClipboardCheck className="text-emerald-600" /> نموذج استلام: {selectedPO.id.slice(0,8)}
               </h3>
               
               <div className="space-y-4">
@@ -164,7 +144,6 @@ const ReceiptsView: React.FC<{ user: User }> = ({ user }) => {
                 <div className="space-y-3">
                   {selectedPO.items.map((item) => {
                     const remaining = item.quantity - item.receivedQuantity;
-                    // Skip fully received items
                     if (remaining <= 0) return null;
 
                     const currentInput = inputQuantities[item.itemId] || 0;
@@ -206,8 +185,20 @@ const ReceiptsView: React.FC<{ user: User }> = ({ user }) => {
           )}
         </>
       ) : (
-        <div className="bg-white rounded-3xl shadow-sm border border-slate-100 p-8 text-center text-slate-500 font-bold">
-           هذه الواجهة تعرض البيانات من جدول "Receipts" (غير مفعلة في العرض التجريبي الحالي بشكل كامل).
+        <div className="bg-white rounded-3xl shadow-sm border border-slate-100 p-8">
+           <table className="w-full text-left">
+              <thead><tr><th className="p-4">Receipt ID</th><th className="p-4">PO Ref</th><th className="p-4">Date</th><th className="p-4">Received By</th></tr></thead>
+              <tbody>
+                {historyReceipts.map(rec => (
+                   <tr key={rec.id} className="border-b hover:bg-slate-50">
+                      <td className="p-4 font-bold">{rec.id.slice(0,8)}</td>
+                      <td className="p-4">{rec.po_id.slice(0,8)}</td>
+                      <td className="p-4">{new Date(rec.received_date).toLocaleDateString()}</td>
+                      <td className="p-4 text-xs">{rec.received_by}</td>
+                   </tr>
+                ))}
+              </tbody>
+           </table>
         </div>
       )}
     </div>

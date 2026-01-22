@@ -1,21 +1,29 @@
 
-import { GoogleGenAI } from "@google/genai";
+// This now calls our Backend API instead of Google directly
+const API_URL = (import.meta as any).env?.VITE_API_URL || 'http://localhost:8000/api';
 
 export const getProcurementInsight = async (data: any) => {
   try {
-    // Fixed: Always use process.env.API_KEY directly when initializing the SDK
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-    const response = await ai.models.generateContent({
-      model: 'gemini-3-flash-preview',
-      contents: `بناءً على البيانات التالية لنظام المشتريات، قدم تحليلاً مختصراً بالعربية عن أداء المشتريات أو أي تنبيهات لمخاطر تجاوز الميزانية: ${JSON.stringify(data)}`,
-      config: {
-        thinkingConfig: { thinkingBudget: 0 }
-      }
+    const userStr = sessionStorage.getItem('proc_user');
+    const token = userStr ? JSON.parse(userStr).access_token : null;
+    
+    const response = await fetch(`${API_URL}/ai/analyze`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+            data: data.data || data,
+            context: data.context || "General Analysis"
+        })
     });
-    // Property .text is used correctly here
-    return response.text;
+
+    if (!response.ok) return "Service Unavailable";
+    const res = await response.json();
+    return res.text;
   } catch (error) {
-    console.error("Gemini Error:", error);
+    console.error("AI Error:", error);
     return "تعذر الحصول على تحليل ذكي حالياً.";
   }
 };

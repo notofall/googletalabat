@@ -16,14 +16,22 @@
         backdrop-filter: blur(12px);
         border: 1px solid rgba(255, 255, 255, 0.5);
       }
-      .animate-float {
-        animation: float 6s ease-in-out infinite;
+      @keyframes slideInLeft {
+        from { transform: translateX(-100%); opacity: 0; }
+        to { transform: translateX(0); opacity: 1; }
       }
-      @keyframes float {
-        0% { transform: translateY(0px); }
-        50% { transform: translateY(-20px); }
-        100% { transform: translateY(0px); }
+      .animate-slideInLeft {
+        animation: slideInLeft 0.5s cubic-bezier(0.16, 1, 0.3, 1);
       }
+      @keyframes scaleUp {
+        from { transform: scale(0.95); opacity: 0; }
+        to { transform: scale(1); opacity: 1; }
+      }
+      .animate-scaleUp {
+        animation: scaleUp 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+      }
+      .no-scrollbar::-webkit-scrollbar { display: none; }
+      .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
     </style>
   <script type="importmap">
 {

@@ -1,5 +1,5 @@
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   LayoutDashboard, 
   FilePlus, 
@@ -11,11 +11,14 @@ import {
   LogOut,
   UserCircle,
   X,
-  Layers,
-  Sparkles
+  Sparkles,
+  Building2,
+  Receipt,
+  Gavel
 } from 'lucide-react';
-import { User, UserRole } from '../types';
+import { User, UserRole, SystemSettings } from '../types';
 import { ROLE_NAMES } from '../constants';
+import { dbService } from '../services/databaseService';
 
 interface SidebarProps {
   user: User;
@@ -26,13 +29,27 @@ interface SidebarProps {
 }
 
 const Sidebar: React.FC<SidebarProps> = ({ user, activeTab, setActiveTab, onLogout, onClose }) => {
+  const [settings, setSettings] = useState<SystemSettings | null>(null);
+
+  useEffect(() => {
+    const loadSettings = async () => {
+      try {
+        const s = await dbService.getSystemSettings();
+        setSettings(s);
+      } catch (e) { console.debug("Using default branding"); }
+    };
+    loadSettings();
+  }, []);
+
   const menuItems = [
     { id: 'dashboard', label: 'الرئيسية', icon: LayoutDashboard, roles: Object.values(UserRole) },
     { id: 'material_requests', label: 'طلبات المواد', icon: FilePlus, roles: [UserRole.SUPERVISOR, UserRole.ADMIN] },
     { id: 'approvals', label: 'مركز التعميد', icon: CheckSquare, roles: [UserRole.ENGINEER, UserRole.GENERAL_MANAGER, UserRole.ADMIN] },
-    { id: 'procurement', label: 'المشتريات والترسية', icon: ShoppingBag, roles: [UserRole.PROCUREMENT_MANAGER, UserRole.GENERAL_MANAGER, UserRole.ADMIN] },
+    { id: 'quotations', label: 'المناقصات (Sourcing)', icon: Gavel, roles: [UserRole.PROCUREMENT_MANAGER, UserRole.GENERAL_MANAGER, UserRole.ADMIN] },
+    { id: 'procurement', label: 'أوامر الشراء', icon: ShoppingBag, roles: [UserRole.PROCUREMENT_MANAGER, UserRole.GENERAL_MANAGER, UserRole.ADMIN] },
     { id: 'receipts', label: 'المخزون والاستلام', icon: PackageCheck, roles: [UserRole.SUPERVISOR, UserRole.QUANTITY_SURVEYOR, UserRole.ADMIN] },
-    { id: 'master_data', label: 'البيانات الأساسية', icon: Database, roles: [UserRole.ADMIN, UserRole.QUANTITY_SURVEYOR, UserRole.PROCUREMENT_MANAGER] },
+    { id: 'invoices', label: 'الفواتير والمطابقة', icon: Receipt, roles: [UserRole.PROCUREMENT_MANAGER, UserRole.GENERAL_MANAGER, UserRole.ADMIN] },
+    { id: 'master_data', label: 'البيانات والتحكم', icon: Database, roles: [UserRole.ADMIN, UserRole.QUANTITY_SURVEYOR, UserRole.PROCUREMENT_MANAGER, UserRole.GENERAL_MANAGER] },
     { id: 'reports', label: 'التقارير والذكاء', icon: BarChart3, roles: Object.values(UserRole) },
   ];
 
@@ -40,17 +57,16 @@ const Sidebar: React.FC<SidebarProps> = ({ user, activeTab, setActiveTab, onLogo
 
   return (
     <aside className="w-72 bg-[#0f172a] text-white flex flex-col h-full shadow-2xl lg:shadow-none border-l border-slate-800/50">
-      {/* Header */}
       <div className="p-8 pb-4 flex justify-between items-start">
         <div className="flex items-center gap-3">
           <div className="bg-gradient-to-br from-emerald-500 to-teal-600 p-2.5 rounded-xl shadow-lg shadow-emerald-500/20">
-            <Layers size={24} className="text-white" />
+            {settings?.companyLogoUrl ? <img src={settings.companyLogoUrl} alt="logo" className="w-6 h-6 object-contain" /> : <Building2 size={24} className="text-white" />}
           </div>
-          <div>
-            <h1 className="text-2xl font-black text-white tracking-tight">إتقان</h1>
+          <div className="overflow-hidden">
+            <h1 className="text-xl font-black text-white tracking-tight truncate">{settings?.companyName || 'إتقان'}</h1>
             <div className="flex items-center gap-1.5">
-                <span className="text-[10px] bg-emerald-500/10 text-emerald-400 px-1.5 py-0.5 rounded border border-emerald-500/20 font-bold">v2.0</span>
-                <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">ENTERPRISE</span>
+                <span className="text-[10px] bg-emerald-500/10 text-emerald-400 px-1.5 py-0.5 rounded border border-emerald-500/20 font-bold">v2.2</span>
+                <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Enterprise</span>
             </div>
           </div>
         </div>
@@ -59,7 +75,6 @@ const Sidebar: React.FC<SidebarProps> = ({ user, activeTab, setActiveTab, onLogo
         </button>
       </div>
 
-      {/* Navigation */}
       <div className="flex-1 overflow-y-auto py-6 px-4 no-scrollbar space-y-1">
         <div className="px-4 mb-2 text-[10px] font-black text-slate-500 uppercase tracking-widest">القائمة الرئيسية</div>
         <nav className="space-y-1">
@@ -81,7 +96,6 @@ const Sidebar: React.FC<SidebarProps> = ({ user, activeTab, setActiveTab, onLogo
         </nav>
       </div>
 
-      {/* Footer User Profile */}
       <div className="p-4 mx-4 mb-4 bg-slate-800/40 rounded-3xl border border-slate-700/50 backdrop-blur-sm">
         <div className="flex items-center gap-3 mb-3">
           <div className="relative">

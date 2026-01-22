@@ -18,8 +18,15 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
 
   useEffect(() => {
     const checkInit = async () => {
-      const initialized = await dbService.isSystemInitialized();
-      setIsSystemInitialized(initialized);
+      try {
+        const initialized = await dbService.isSystemInitialized();
+        setIsSystemInitialized(initialized);
+      } catch (e) {
+        // If check fails (e.g. network error before mock switch), default to initialized (show login)
+        // or handle gracefully. For now, assume initialized to show login so user isn't stuck.
+        console.error("Init check failed", e);
+        setIsSystemInitialized(true); 
+      }
     };
     checkInit();
   }, []);
@@ -28,7 +35,7 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
     e.preventDefault();
     setLoading(true);
     try {
-      const user = await dbService.authenticateUser(email);
+      const user = await dbService.authenticateUser(email, password);
       if (user) {
         sessionStorage.setItem('proc_user', JSON.stringify(user));
         onLogin(user);
@@ -43,13 +50,27 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
   const handleSetup = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-    const admin = await dbService.registerSystemAdmin(adminName, adminEmail);
-    sessionStorage.setItem('proc_user', JSON.stringify(admin));
-    onLogin(admin);
-    setLoading(false);
+    try {
+        const admin = await dbService.registerSystemAdmin(adminName, adminEmail);
+        sessionStorage.setItem('proc_user', JSON.stringify(admin));
+        onLogin(admin);
+    } catch (e) {
+        alert("فشل في تهيئة النظام");
+    } finally {
+        setLoading(false);
+    }
   };
 
-  if (isSystemInitialized === null) return null;
+  if (isSystemInitialized === null) {
+      return (
+          <div className="min-h-screen bg-[#0f172a] flex items-center justify-center font-['Cairo'] text-white">
+              <div className="flex flex-col items-center gap-4">
+                  <div className="w-12 h-12 border-4 border-emerald-500/30 border-t-emerald-500 rounded-full animate-spin"></div>
+                  <p className="text-sm font-bold opacity-70">جاري الاتصال بالمنظومة...</p>
+              </div>
+          </div>
+      );
+  }
 
   return (
     <div className="min-h-screen bg-[#0f172a] flex items-center justify-center p-6 font-['Cairo'] overflow-hidden relative">
@@ -105,8 +126,9 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
                    </div>
                    <div className="space-y-4">
                       <div className="space-y-1">
-                         <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mr-4">Corporate Identity</label>
-                         <input required type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="البريد الإلكتروني" className="w-full p-5 bg-slate-50 border border-slate-100 rounded-3xl font-black text-slate-800 outline-none focus:ring-4 focus:ring-emerald-500/10 transition-all" />
+                         <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mr-4">Username or Email</label>
+                         {/* Changed type to text to allow non-email usernames */}
+                         <input required type="text" value={email} onChange={e => setEmail(e.target.value)} placeholder="اسم المستخدم أو البريد الإلكتروني" className="w-full p-5 bg-slate-50 border border-slate-100 rounded-3xl font-black text-slate-800 outline-none focus:ring-4 focus:ring-emerald-500/10 transition-all" />
                       </div>
                       <div className="space-y-1">
                          <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mr-4">Security Credentials</label>

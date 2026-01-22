@@ -88,6 +88,7 @@ export const BusinessRules = {
    */
   canEditPrices: (user: User, poStatus: string): boolean => {
     if (poStatus === 'CANCELLED') return false;
-    return !!user.canEditPOPrices;
+    // Fix: Access user.permissions.canEditPrices instead of non-existent user.canEditPOPrices
+    return !!user.permissions.canEditPrices;
   }
 };
