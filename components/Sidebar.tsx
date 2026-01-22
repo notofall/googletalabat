@@ -32,7 +32,7 @@ const Sidebar: React.FC<SidebarProps> = ({ user, activeTab, setActiveTab, onLogo
     { id: 'approvals', label: 'مركز التعميد', icon: CheckSquare, roles: [UserRole.ENGINEER, UserRole.GENERAL_MANAGER, UserRole.ADMIN] },
     { id: 'procurement', label: 'المشتريات والترسية', icon: ShoppingBag, roles: [UserRole.PROCUREMENT_MANAGER, UserRole.GENERAL_MANAGER, UserRole.ADMIN] },
     { id: 'receipts', label: 'المخزون والاستلام', icon: PackageCheck, roles: [UserRole.SUPERVISOR, UserRole.QUANTITY_SURVEYOR, UserRole.ADMIN] },
-    { id: 'master_data', label: 'البيانات الأساسية', icon: Database, roles: [UserRole.ADMIN, UserRole.QUANTITY_SURVEYOR] },
+    { id: 'master_data', label: 'البيانات الأساسية', icon: Database, roles: [UserRole.ADMIN, UserRole.QUANTITY_SURVEYOR, UserRole.PROCUREMENT_MANAGER] },
     { id: 'reports', label: 'التقارير والذكاء', icon: BarChart3, roles: Object.values(UserRole) },
   ];
 

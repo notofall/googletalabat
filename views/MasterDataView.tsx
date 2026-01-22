@@ -41,10 +41,23 @@ const MasterDataView: React.FC<{ user: User }> = ({ user }) => {
     fetchData();
   }, [currentSection, showAddUserModal, showAddModal]);
 
-  const canManageData = user.role === UserRole.ADMIN || user.role === UserRole.QUANTITY_SURVEYOR || user.role === UserRole.GENERAL_MANAGER;
+  // تحديث الصلاحيات: مدير المشتريات يجب أن يتمكن من إدارة البيانات الأساسية (الموردين والكتالوج)
+  const canManageData = 
+    user.role === UserRole.ADMIN || 
+    user.role === UserRole.QUANTITY_SURVEYOR || 
+    user.role === UserRole.GENERAL_MANAGER ||
+    user.role === UserRole.PROCUREMENT_MANAGER;
 
   if (!canManageData) {
-    return <div className="p-10 text-center text-red-500 font-bold">دخول غير مصرح به</div>;
+    return (
+      <div className="min-h-[60vh] flex flex-col items-center justify-center animate-fadeIn">
+        <div className="bg-red-50 p-10 rounded-[3rem] border border-red-100 text-center space-y-4">
+           <Lock size={64} className="text-red-400 mx-auto" />
+           <h3 className="text-2xl font-black text-red-700">دخول غير مصرح به</h3>
+           <p className="text-red-600 font-bold max-w-xs">عذراً، لا تمتلك صلاحية الوصول إلى إدارة البيانات الأساسية. يرجى مراجعة مدير النظام.</p>
+        </div>
+      </div>
+    );
   }
 
   const sections = [
